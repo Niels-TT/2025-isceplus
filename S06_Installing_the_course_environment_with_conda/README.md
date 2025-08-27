@@ -31,7 +31,7 @@ Several of the packages you have installed expect files to be on your path. So w
 ### For ISCE
 Using your favorite text editor, make a file called `ISCE_config.sh` in a place where you can access it easily, containing the below:
 ```
-export ISCE_HOME=$ISCE_INSTALL_ROOT/isce
+export PATH=$ISCE_HOME/applications:$PATH
 ```
 
 ### For mintpy
