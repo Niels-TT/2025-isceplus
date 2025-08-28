@@ -63,7 +63,7 @@ This can be useful for using the stack processors.
 
 Navigate to the place you would like to store the files, then clone the repository:
 ```
-https://github.com/isce-framework/isce2
+git clone https://github.com/isce-framework/isce2
 ```
 Details on the stack processors can be found here: https://github.com/isce-framework/isce2/tree/main/contrib/stack
 
