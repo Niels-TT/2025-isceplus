@@ -33,3 +33,22 @@ wkt = "raw/aoi.wkt"
 [storage]
 slc_dir = "miami/insar/us_isleofnormandy_s1_asc_t48/stack/slc"
 download_manifest = "miami/insar/us_isleofnormandy_s1_asc_t48/stack/download_manifest.json"
+
+[ancillary.dem]
+file = "miami/insar/us_isleofnormandy_s1_asc_t48/stack/dem/opentopo_srtm_gl1_ellip.tif"
+demtype = "SRTM_GL1_Ellip"
+bbox_buffer_deg = 0.02
+vertical_datum = "WGS84_ELLIPSOID"
+require_ellipsoid_heights = true
+
+[processing.compass]
+work_dir = "miami/insar/us_isleofnormandy_s1_asc_t48/stack/compass"
+orbit_dir = "miami/insar/us_isleofnormandy_s1_asc_t48/stack/orbits"
+logs_dir = "miami/insar/us_isleofnormandy_s1_asc_t48/logs/compass"
+common_bursts_only = true
+pol = "co-pol"
+x_spacing_m = 5.0
+y_spacing_m = 10.0
+bbox_buffer_deg = 0.02
+flatten = true
+corrections = true

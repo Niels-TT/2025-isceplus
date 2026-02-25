@@ -15,3 +15,6 @@ miami/insar/*/search/raw/**
 # Miami project: raw SLC/intermediate stack storage
 miami/insar/*/stack/**
 !miami/insar/*/stack/.gitkeep
+miami/insar/*/logs/**
+!miami/insar/*/logs/.gitkeep
+miami/scripts/__pycache__/**

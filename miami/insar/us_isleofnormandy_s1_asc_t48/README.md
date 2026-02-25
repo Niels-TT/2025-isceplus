@@ -8,14 +8,16 @@
 - Selected span: `2015-09-21` to `2017-03-26`
 - Selected source volume: about `92.36 GB` (decimal)
 
-## Next Processing Stages
-1. Download SLC + orbit files into a dedicated raw-data location.
-2. Build CSLC/SLC stack directory layout under `stack/`.
-3. Coregister stack (isce3 workflow).
-4. Run time-series pipeline (dolphin) on the coregistered stack.
+## Post-Download Plan
+1. Download DEM to `stack/dem/` (`download_dem_opentopography.py`).
+2. Prepare COMPASS run files (`prepare_compass_stack.py`).
+3. Run generated run files (`run_compass_runfiles.py`).
+4. Use resulting coregistered outputs for Dolphin processing.
 
 ## Notes
 - Keep processing logs in `logs/`
 - Use `scratch/` for temporary intermediates that can be regenerated
 - Use `stack/slc/` for raw SAFE ZIP storage
+- Use `stack/orbits/` for orbit cache (auto-filled by COMPASS/S1Reader)
+- Use `stack/compass/` for generated runconfigs/runfiles/state
 - `stack/download_manifest.json` records per-scene download status

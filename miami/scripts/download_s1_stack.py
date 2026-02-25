@@ -14,6 +14,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import asf_search as asf
+from tqdm import tqdm
 
 
 @dataclass
@@ -25,6 +26,21 @@ class DownloadItem:
     dest_path: Path
     status: str
     existing_bytes: int
+
+
+def strip_auth_if_aws(response, *args, **kwargs):
+    """
+    ASF redirect helper:
+    strip auth headers on redirects to AWS-backed URLs to avoid auth header conflicts.
+    """
+    if (
+        300 <= response.status_code <= 399
+        and "location" in response.headers
+        and "amazonaws.com" in urlparse(response.headers["location"]).netloc
+    ):
+        location = response.headers["location"]
+        response.headers.clear()
+        response.headers["location"] = location
 
 
 def read_toml(path: Path) -> dict:
@@ -127,6 +143,70 @@ def update_manifest(manifest: dict, item: DownloadItem, status: str, message: st
         "expected_bytes": item.expected_bytes,
         "existing_bytes": item.dest_path.stat().st_size if item.dest_path.exists() else 0,
     }
+
+
+def short_scene_name(scene_name: str, max_len: int = 44) -> str:
+    if len(scene_name) <= max_len:
+        return scene_name
+    keep = max_len - 3
+    left = keep // 2
+    right = keep - left
+    return f"{scene_name[:left]}...{scene_name[-right:]}"
+
+
+def download_url_with_progress(
+    item: DownloadItem,
+    session: asf.ASFSession,
+    stack_bytes_bar: tqdm | None,
+    scene_index: int,
+    scene_total: int,
+    position: int = 2,
+) -> None:
+    response = session.get(
+        item.url,
+        stream=True,
+        hooks={"response": strip_auth_if_aws},
+    )
+    try:
+        response.raise_for_status()
+    except Exception as e:  # noqa: BLE001
+        body_preview = ""
+        try:
+            body_preview = response.text[:300]
+        except Exception:  # noqa: BLE001
+            body_preview = ""
+        raise RuntimeError(
+            f"HTTP {response.status_code} while downloading {item.scene_name}. {body_preview}"
+        ) from e
+
+    header_len = response.headers.get("Content-Length") or response.headers.get("content-length")
+    header_total = int(header_len) if header_len and header_len.isdigit() else None
+    file_total = header_total or item.expected_bytes
+
+    scene_label = short_scene_name(item.scene_name)
+    desc = f"SLC {scene_index}/{scene_total} {scene_label}"
+    with (
+        item.dest_path.open("wb") as f,
+        tqdm(
+            total=file_total,
+            desc=desc,
+            unit="B",
+            unit_scale=True,
+            unit_divisor=1024,
+            dynamic_ncols=True,
+            leave=False,
+            mininterval=0.2,
+            position=position,
+        ) as file_bar,
+    ):
+        for chunk in response.iter_content(chunk_size=1024 * 1024):
+            if not chunk:
+                continue
+            f.write(chunk)
+            n = len(chunk)
+            file_bar.update(n)
+            if stack_bytes_bar is not None:
+                stack_bytes_bar.update(n)
 
 
 def main() -> int:
@@ -240,39 +320,66 @@ def main() -> int:
     session = asf.ASFSession().auth_with_creds(username, password)
     manifest = load_manifest(manifest_path)
 
-    for idx, item in enumerate(pending, start=1):
-        print(
-            f"[{idx}/{len(pending)}] {item.scene_name} "
-            f"({item.expected_bytes / 1e9:.2f} GB)" if item.expected_bytes else f"[{idx}/{len(pending)}] {item.scene_name}"
-        )
+    stack_scene_bar = tqdm(
+        total=len(pending),
+        desc="Stack scenes",
+        unit="scene",
+        dynamic_ncols=True,
+        mininterval=0.2,
+        position=0,
+    )
+    stack_bytes_total = pending_known_bytes if unknown_size_count == 0 and pending_known_bytes > 0 else None
+    stack_bytes_bar = tqdm(
+        total=stack_bytes_total,
+        desc="Stack bytes",
+        unit="B",
+        unit_scale=True,
+        unit_divisor=1024,
+        dynamic_ncols=True,
+        mininterval=0.2,
+        position=1,
+    )
 
-        if item.dest_path.exists():
-            current_size = item.dest_path.stat().st_size
-            if item.expected_bytes is not None and current_size != item.expected_bytes:
-                # Clean partial files because asf.download_url skips existing filenames.
-                item.dest_path.unlink()
+    try:
+        for idx, item in enumerate(pending, start=1):
+            scene_label = short_scene_name(item.scene_name)
+            stack_scene_bar.set_postfix_str(f"now={scene_label}")
 
-        try:
-            asf.download_url(
-                url=item.url,
-                path=str(slc_dir),
-                filename=item.filename,
-                session=session,
-            )
-            if item.expected_bytes is not None:
-                got = item.dest_path.stat().st_size if item.dest_path.exists() else 0
-                if got != item.expected_bytes:
-                    raise RuntimeError(
-                        f"Size mismatch for {item.filename}: expected {item.expected_bytes}, got {got}"
-                    )
+            if item.dest_path.exists():
+                current_size = item.dest_path.stat().st_size
+                if item.expected_bytes is not None and current_size != item.expected_bytes:
+                    # Remove partial files because current workflow always restarts the file.
+                    item.dest_path.unlink()
 
-            update_manifest(manifest, item, status="downloaded")
-            save_manifest(manifest_path, manifest)
-        except Exception as e:  # noqa: BLE001
-            update_manifest(manifest, item, status="failed", message=str(e))
-            save_manifest(manifest_path, manifest)
-            print(f"Download failed for {item.scene_name}: {e}", file=sys.stderr)
-            return 4
+            try:
+                download_url_with_progress(
+                    item=item,
+                    session=session,
+                    stack_bytes_bar=stack_bytes_bar,
+                    scene_index=idx,
+                    scene_total=len(pending),
+                    position=2,
+                )
+
+                if item.expected_bytes is not None:
+                    got = item.dest_path.stat().st_size if item.dest_path.exists() else 0
+                    if got != item.expected_bytes:
+                        raise RuntimeError(
+                            f"Size mismatch for {item.filename}: expected {item.expected_bytes}, got {got}"
+                        )
+
+                update_manifest(manifest, item, status="downloaded")
+                save_manifest(manifest_path, manifest)
+                stack_scene_bar.update(1)
+                stack_scene_bar.set_postfix_str(f"last={scene_label}")
+            except Exception as e:  # noqa: BLE001
+                update_manifest(manifest, item, status="failed", message=str(e))
+                save_manifest(manifest_path, manifest)
+                tqdm.write(f"Download failed for {item.scene_name}: {e}")
+                return 4
+    finally:
+        stack_scene_bar.close()
+        stack_bytes_bar.close()
 
     print("\nDownload stage completed successfully.")
     return 0

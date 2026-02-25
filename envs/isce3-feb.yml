@@ -11,6 +11,7 @@ dependencies:
 
   # Core workflow packages
   - isce3
+  - compass>=0.5.6
   - asf_search
   - dolphin>=0.42
   - opera-utils>=0.24

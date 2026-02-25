@@ -5,11 +5,13 @@
 - `aux/bbox.kml`: AOI polygon (source of truth)
 - `bbox.kml`: symlink to `aux/bbox.kml` for convenience
 - `insar/us_isleofnormandy_s1_asc_t48/`
-- `insar/us_isleofnormandy_s1_asc_t48/config/stack.toml`: stack/search configuration
+- `insar/us_isleofnormandy_s1_asc_t48/config/stack.toml`: stack + processing config
 - `insar/us_isleofnormandy_s1_asc_t48/search/`: ASF search outputs
-- `insar/us_isleofnormandy_s1_asc_t48/stack/`: stack products (to be filled by processing)
-- `insar/us_isleofnormandy_s1_asc_t48/logs/`
-- `insar/us_isleofnormandy_s1_asc_t48/scratch/`
+- `insar/us_isleofnormandy_s1_asc_t48/stack/slc/`: downloaded Sentinel-1 ZIPs
+- `insar/us_isleofnormandy_s1_asc_t48/stack/dem/`: AOI DEM from OpenTopography
+- `insar/us_isleofnormandy_s1_asc_t48/stack/orbits/`: POEORB/RESORB cached by COMPASS
+- `insar/us_isleofnormandy_s1_asc_t48/stack/compass/`: COMPASS runconfigs/runfiles/results
+- `insar/us_isleofnormandy_s1_asc_t48/logs/`: execution logs
 
 ## Stack Definition
 - AOI: `miami/aux/bbox.kml`
@@ -18,31 +20,55 @@
 - Sensor: Sentinel-1 IW SLC
 - Direction/Track: Ascending / Relative Orbit 48
 - Selection policy: first `20` acquisition dates starting at reference date
-- Expected selected count: `20` scenes, `20` unique dates
-- Full-match context (before subsetting): `161` scenes, `161` unique dates
 
-## Run Search
-Why: this creates a reproducible, machine-readable scene manifest before any heavy download.
+## Scripts
+- `miami/scripts/search_s1_stack.py`: ASF search + scene manifest generation
+- `miami/scripts/download_s1_stack.py`: storage-aware SLC downloader with tqdm
+- `miami/scripts/download_dem_opentopography.py`: AOI DEM downloader from OpenTopography
+- `miami/scripts/prepare_compass_stack.py`: builds COMPASS run files (with integrated orbit retrieval)
+- `miami/scripts/run_compass_runfiles.py`: executes generated COMPASS run files with resume state
 
-From repo root:
+## Alignment With Official Workflows
+Why: this clarifies what is standard OPERA/ISCE3 workflow vs project-specific orchestration.
+
+- Core stack geocode/coreg processing is official COMPASS (`s1_geocode_stack.py`), not custom reimplementation.
+- Orbit retrieval is official `s1-reader` behavior used by COMPASS (auto lookup/download when needed).
+- Time-series stage target is Dolphin on top of coregistered stack products.
+- Low-level SAR math/geometry engine is ISCE3 under these higher-level tools.
+- Scene discovery and metadata are built from ASF Search API (`asf_search` package).
+
+Project-specific parts in this repo:
+- `search_s1_stack.py` defines AOI/date selection policy and writes reproducible scene manifests.
+- `download_s1_stack.py` adds storage checks, resumable manifesting, and terminal progress UX.
+- `prepare_compass_stack.py` validates input completeness and builds a deterministic COMPASS command.
+- `run_compass_runfiles.py` adds resumable runfile execution and logging around COMPASS outputs.
+
+Reference repos/docs:
+- COMPASS: https://github.com/opera-adt/COMPASS
+- COMPASS docs: https://opera-compass.readthedocs.io/en/latest/
+- s1-reader: https://github.com/opera-adt/s1-reader
+- Dolphin: https://github.com/opera-adt/dolphin
+- ISCE3: https://github.com/isce-framework/isce3
+- ASF Search docs: https://docs.asf.alaska.edu/asf_search/
+
+## Environment
+Why: COMPASS CLI is required for stack coregistration.
 
 ```bash
-mamba run -n isce3-feb python miami/scripts/search_s1_stack.py \
-  --repo-root /home/niels/course/2025-isceplus \
-  --config miami/insar/us_isleofnormandy_s1_asc_t48/config/stack.toml
+mamba env update -n isce3-feb -f /home/niels/course/2025-isceplus/envs/isce3-feb.yml
 ```
 
-Outputs:
-- `miami/insar/us_isleofnormandy_s1_asc_t48/search/products/scene_names.txt`
-- `miami/insar/us_isleofnormandy_s1_asc_t48/search/products/scenes.csv`
-- `miami/insar/us_isleofnormandy_s1_asc_t48/search/products/summary.json`
-- `miami/insar/us_isleofnormandy_s1_asc_t48/search/raw/results.geojson`
-- `miami/insar/us_isleofnormandy_s1_asc_t48/search/raw/aoi.wkt`
+## Why CLI + `--repo-root` + `--config`
+Why: explicit paths make every run reproducible and avoid hidden working-directory behavior.
 
-## Download Stack (SLC)
-Why: this converts your selected scene list into local raw data for processing.
+- `--config` picks the exact stack definition.
+- `--repo-root` forces stable relative-path resolution.
+- Commands can be copy-pasted into notes/issues and replayed exactly.
 
-Dry-run first (size + free-space check only):
+## Download Stage
+Why: geocoding/coregistration cannot start until the selected raw SLC ZIPs are local.
+
+Dry-run (size + free-space check):
 
 ```bash
 mamba run -n isce3-feb python miami/scripts/download_s1_stack.py \
@@ -50,7 +76,7 @@ mamba run -n isce3-feb python miami/scripts/download_s1_stack.py \
   --config miami/insar/us_isleofnormandy_s1_asc_t48/config/stack.toml
 ```
 
-Execute actual download:
+Actual download:
 
 ```bash
 mamba run -n isce3-feb python miami/scripts/download_s1_stack.py \
@@ -59,78 +85,73 @@ mamba run -n isce3-feb python miami/scripts/download_s1_stack.py \
   --download
 ```
 
-Optional staged download (example: first 5 pending scenes):
-
-```bash
-mamba run -n isce3-feb python miami/scripts/download_s1_stack.py \
-  --repo-root /home/niels/course/2025-isceplus \
-  --config miami/insar/us_isleofnormandy_s1_asc_t48/config/stack.toml \
-  --download --max-scenes 5
-```
-
-Files are stored in:
-- `miami/insar/us_isleofnormandy_s1_asc_t48/stack/slc/`
-- `miami/insar/us_isleofnormandy_s1_asc_t48/stack/download_manifest.json`
-
-## Why CLI + `--repo-root` + `--config`
-Why: explicit inputs make runs reproducible and avoid “it worked from one folder but not another”.
-
-- `--config` selects the exact stack definition file
-- `--repo-root` resolves all relative paths in config the same way every time
-- command history can be copied into docs/issues and replayed later
-
-## What To Do Now (Stack Images)
-Why: this is the minimum reliable path to get the selected SLC stack locally.
+## Post-Download COMPASS Workflow
+Why: this is the minimum complete path to high-precision stack coregistration with isce3/COMPASS.
 
 1. Validate credentials:
-   Why: downloads will fail immediately if Earthdata auth is missing.
+   Why: Earthdata is needed for ASF SLC access and `.topoapi` for DEM API calls.
 
 ```bash
 bash /home/niels/course/2025-isceplus/scripts/check_credentials.sh
 ```
 
-2. (Optional) regenerate search outputs:
-   Why: confirms scene list matches current config before download.
+2. Download DEM for AOI:
+   Why: DEM is required for geometric geocoding/coregistration.
 
 ```bash
-mamba run -n isce3-feb python /home/niels/course/2025-isceplus/miami/scripts/search_s1_stack.py \
+mamba run -n isce3-feb python miami/scripts/download_dem_opentopography.py \
   --repo-root /home/niels/course/2025-isceplus \
   --config miami/insar/us_isleofnormandy_s1_asc_t48/config/stack.toml
 ```
 
-3. Run downloader dry-run:
-   Why: checks size/free-space without transferring data.
+This stack config uses `SRTM_GL1_Ellip` and sets `vertical_datum = WGS84_ELLIPSOID`.
+Why: this makes DEM height reference explicit and avoids silent datum mismatch in high-precision geometry.
+
+3. Prepare COMPASS stack run files:
+   Why: this step scans SLCs, applies AOI/date settings, and generates per-burst run scripts.
 
 ```bash
-mamba run -n isce3-feb python /home/niels/course/2025-isceplus/miami/scripts/download_s1_stack.py \
+mamba run -n isce3-feb python miami/scripts/prepare_compass_stack.py \
   --repo-root /home/niels/course/2025-isceplus \
   --config miami/insar/us_isleofnormandy_s1_asc_t48/config/stack.toml
 ```
 
-4. Start with staged download (`5` scenes):
-   Why: quick validation of auth/network/storage before full pull.
+Notes:
+- Orbit retrieval is integrated: missing orbit files are auto-downloaded by COMPASS/S1Reader into `stack/orbits/`.
+- AOI `bbox` is always passed to keep the workflow portable (avoids dependency on private default burst DB paths).
+- Scene completeness is checked before prepare: missing ZIPs and wrong-size ZIPs both stop the run by default.
+
+4. Run generated COMPASS run files:
+   Why: this executes the actual geocoding/coregistration workloads.
 
 ```bash
-mamba run -n isce3-feb python /home/niels/course/2025-isceplus/miami/scripts/download_s1_stack.py \
+mamba run -n isce3-feb python miami/scripts/run_compass_runfiles.py \
   --repo-root /home/niels/course/2025-isceplus \
-  --config miami/insar/us_isleofnormandy_s1_asc_t48/config/stack.toml \
-  --download --max-scenes 5
+  --config miami/insar/us_isleofnormandy_s1_asc_t48/config/stack.toml
 ```
 
-5. Download full selected stack (`20` scenes):
-   Why: completes the raw input set for the next processing stage.
+Resume behavior:
+- `run_compass_runfiles.py` writes `stack/compass/run_state.json`.
+- Re-running resumes and skips completed run files.
+- Use `--no-resume` to force re-run.
+
+## Useful Dry Runs
+Why: fail fast before heavy compute.
+
+Prepare dry-run (show exact COMPASS command):
 
 ```bash
-mamba run -n isce3-feb python /home/niels/course/2025-isceplus/miami/scripts/download_s1_stack.py \
+mamba run -n isce3-feb python miami/scripts/prepare_compass_stack.py \
   --repo-root /home/niels/course/2025-isceplus \
   --config miami/insar/us_isleofnormandy_s1_asc_t48/config/stack.toml \
-  --download
+  --dry-run
 ```
 
-## Next Inputs (Later Stage)
-Why: coregistration will also require supporting geodata beyond raw SLC ZIPs.
+Run-files dry-run (show pending work):
 
-- Precise orbit state vectors (POEORB)
-- DEM over AOI
-
-These are intentionally deferred until raw stack download is complete.
+```bash
+mamba run -n isce3-feb python miami/scripts/run_compass_runfiles.py \
+  --repo-root /home/niels/course/2025-isceplus \
+  --config miami/insar/us_isleofnormandy_s1_asc_t48/config/stack.toml \
+  --dry-run
+```
