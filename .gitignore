@@ -5,3 +5,13 @@
 .env
 .env.local
 .env.*.local
+
+# Miami project: generated search artifacts
+miami/insar/*/search/products/**
+miami/insar/*/search/raw/**
+!miami/insar/*/search/products/.gitkeep
+!miami/insar/*/search/raw/.gitkeep
+
+# Miami project: raw SLC/intermediate stack storage
+miami/insar/*/stack/**
+!miami/insar/*/stack/.gitkeep
