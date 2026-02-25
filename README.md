@@ -7,5 +7,6 @@ This 5-day course will cover basic & advanced InSAR theory, InSAR processing wit
 - Course notebooks/materials are in `course/`
 - Conda environments are in `envs/`
 - Miami project work is in `miami/`
+- Personal runbooks are in `knowledge_library/`
 - Credentials are read from `~/.netrc` and `~/.topoapi`
 - Run `scripts/check_credentials.sh` to verify credential files and permissions
