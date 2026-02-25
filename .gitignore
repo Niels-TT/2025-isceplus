@@ -2,3 +2,6 @@
 */.ipynb_checkpoints/*
 *.DS_Store
 .vscode
+.env
+.env.local
+.env.*.local

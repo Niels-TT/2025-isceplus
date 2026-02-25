@@ -1,0 +1,29 @@
+name: isce3-feb
+channels:
+  - conda-forge
+  - nodefaults
+dependencies:
+  # isce3 currently resolves cleanly on Python 3.12 in conda-forge
+  - python=3.12
+  - pip
+  - ipykernel
+  - jupyterlab
+
+  # Core workflow packages
+  - isce3
+  - asf_search
+  - dolphin>=0.42
+  - opera-utils>=0.24
+
+  # Common geospatial stack tools used across course notebooks
+  - gdal
+  - rasterio
+  - rioxarray
+  - xarray
+  - netcdf4
+  - boto3
+
+  # Plotting / notebook UX
+  - matplotlib
+  - ipympl
+  - ipywidgets

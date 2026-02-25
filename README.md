@@ -3,3 +3,8 @@ Contains materials for the [2025 Technical Short Course: InSAR Processing and An
 
 This 5-day course will cover basic & advanced InSAR theory, InSAR processing with the JPL/Caltech InSAR Scientific Computing Environment (ISCE), methods for mitigating noise in InSAR data, access the ARIA & OPERA standard InSAR products and prepare them for time-series analysis, InSAR time-series analysis with the MintPy software, pixel offset tracking, and basic data interpretation and modeling.
 
+## Local repo layout
+- Course notebooks/materials are in `course/`
+- Conda environments are in `envs/`
+- Credentials template is `.env.template` (local secrets go in `.env`)
+- Run `scripts/sync_credentials.sh` to write `~/.netrc` and `~/.topoapi` from `.env`
