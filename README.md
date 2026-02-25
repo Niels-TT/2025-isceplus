@@ -6,5 +6,6 @@ This 5-day course will cover basic & advanced InSAR theory, InSAR processing wit
 ## Local repo layout
 - Course notebooks/materials are in `course/`
 - Conda environments are in `envs/`
-- Credentials template is `.env.template` (local secrets go in `.env`)
-- Run `scripts/sync_credentials.sh` to write `~/.netrc` and `~/.topoapi` from `.env`
+- Miami project work is in `miami/`
+- Credentials are read from `~/.netrc` and `~/.topoapi`
+- Run `scripts/check_credentials.sh` to verify credential files and permissions

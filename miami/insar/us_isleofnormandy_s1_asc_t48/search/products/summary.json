@@ -1,0 +1,16 @@
+{
+  "stack_name": "us_isleofnormandy_s1_asc_t48",
+  "aoi_kml": "/home/niels/course/2025-isceplus/miami/aux/bbox.kml",
+  "reference_date": "2015-09-21",
+  "start": "2015-09-19T00:00:00Z",
+  "end": "2022-04-30T23:59:59Z",
+  "platform": "SENTINEL1",
+  "processing_level": "SLC",
+  "beam_mode": "IW",
+  "flight_direction": "ASCENDING",
+  "relative_orbit": 48,
+  "scene_count": 161,
+  "unique_date_count": 161,
+  "first_date": "2015-09-21",
+  "last_date": "2022-04-29"
+}

@@ -1,0 +1,26 @@
+[project]
+name = "us_isleofnormandy_s1_asc_t48"
+site = "miami_isle_of_normandy"
+
+[aoi]
+kml = "miami/aux/bbox.kml"
+
+[search]
+platform = "SENTINEL1"
+processing_level = "SLC"
+beam_mode = "IW"
+flight_direction = "ASCENDING"
+relative_orbit = 48
+start = "2015-09-19T00:00:00Z"
+end = "2022-04-30T23:59:59Z"
+reference_date = "2015-09-21"
+expected_scenes = 161
+expected_unique_dates = 161
+
+[outputs]
+root = "miami/insar/us_isleofnormandy_s1_asc_t48/search"
+scene_list = "products/scene_names.txt"
+metadata_csv = "products/scenes.csv"
+summary_json = "products/summary.json"
+geojson = "raw/results.geojson"
+wkt = "raw/aoi.wkt"
