@@ -17,3 +17,5 @@
 ## Notes
 - Keep processing logs in `logs/`
 - Use `scratch/` for temporary intermediates that can be regenerated
+- Use `stack/slc/` for raw SAFE ZIP storage
+- `stack/download_manifest.json` records per-scene download status

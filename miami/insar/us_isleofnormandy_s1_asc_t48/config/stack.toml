@@ -29,3 +29,7 @@ metadata_csv = "products/scenes.csv"
 summary_json = "products/summary.json"
 geojson = "raw/results.geojson"
 wkt = "raw/aoi.wkt"
+
+[storage]
+slc_dir = "miami/insar/us_isleofnormandy_s1_asc_t48/stack/slc"
+download_manifest = "miami/insar/us_isleofnormandy_s1_asc_t48/stack/download_manifest.json"

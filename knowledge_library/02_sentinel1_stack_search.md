@@ -100,3 +100,29 @@ Why: Controlled progression reduces risk and preserves traceability.
 2. Build stack directory under `stack/`.
 3. Run coregistration workflow.
 4. Run Dolphin time-series workflow.
+
+## Download Step (Current Miami Workflow)
+Why: keep download logic explicit and storage-safe instead of auto-pulling by accident.
+
+Dry-run:
+
+```bash
+mamba run -n isce3-feb python /home/niels/course/2025-isceplus/miami/scripts/download_s1_stack.py \
+  --repo-root /home/niels/course/2025-isceplus \
+  --config miami/insar/us_isleofnormandy_s1_asc_t48/config/stack.toml
+```
+
+Execute:
+
+```bash
+mamba run -n isce3-feb python /home/niels/course/2025-isceplus/miami/scripts/download_s1_stack.py \
+  --repo-root /home/niels/course/2025-isceplus \
+  --config miami/insar/us_isleofnormandy_s1_asc_t48/config/stack.toml \
+  --download
+```
+
+Notes:
+- downloader reads selected scenes from `search/products/scenes.csv`
+- uses Earthdata credentials from `~/.netrc`
+- writes raw SLC ZIPs to `stack/slc/`
+- writes status to `stack/download_manifest.json`
