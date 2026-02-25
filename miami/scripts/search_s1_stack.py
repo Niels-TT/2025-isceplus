@@ -61,6 +61,7 @@ def write_scene_csv(path: Path, results: Iterable) -> None:
         "polarization",
         "processingLevel",
         "url",
+        "bytes",
     ]
 
     with path.open("w", newline="", encoding="utf-8") as f:
@@ -71,9 +72,56 @@ def write_scene_csv(path: Path, results: Iterable) -> None:
             writer.writerow({col: props.get(col, "") for col in columns})
 
 
+def apply_selection_policy(results: list, selection_cfg: dict, reference_date: str) -> tuple[list, list[str]]:
+    mode = selection_cfg.get("mode", "none")
+    max_dates = int(selection_cfg.get("max_dates", 0))
+    require_reference = bool(selection_cfg.get("require_reference", True))
+
+    if mode == "none":
+        unique_dates = sorted({item.properties["startTime"][:10] for item in results})
+        return results, unique_dates
+
+    if mode != "first_n_from_reference":
+        raise ValueError(f"Unsupported selection.mode: {mode}")
+    if max_dates <= 0:
+        raise ValueError("selection.max_dates must be > 0 for first_n_from_reference")
+
+    all_dates = sorted({item.properties["startTime"][:10] for item in results})
+    if require_reference and reference_date not in all_dates:
+        raise ValueError(
+            f"Reference date {reference_date} not found in search results. "
+            "Choose another reference_date or broaden search constraints."
+        )
+
+    selected_dates = [d for d in all_dates if d >= reference_date][:max_dates]
+    if len(selected_dates) < max_dates:
+        print(
+            f"Warning: requested {max_dates} dates from {reference_date}, "
+            f"but only {len(selected_dates)} are available.",
+            file=sys.stderr,
+        )
+
+    selected_set = set(selected_dates)
+    selected_results = [
+        item for item in results if item.properties["startTime"][:10] in selected_set
+    ]
+
+    return selected_results, selected_dates
+
+
+def filter_geojson(full_geojson: dict, selected_scene_names: set[str]) -> dict:
+    features = full_geojson.get("features", [])
+    filtered = [
+        f
+        for f in features
+        if f.get("properties", {}).get("sceneName") in selected_scene_names
+    ]
+    return {"type": "FeatureCollection", "features": filtered}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Search Sentinel-1 SLC scenes for an InSAR stack config."
+        description="Search Sentinel-1 SLC scenes for the Miami stack config."
     )
     parser.add_argument(
         "--config",
@@ -99,8 +147,8 @@ def main() -> int:
     config_path = config_path.resolve()
 
     cfg = read_toml(config_path)
-
     search_cfg = cfg["search"]
+    selection_cfg = cfg.get("selection", {"mode": "none"})
     aoi_cfg = cfg["aoi"]
     out_cfg = cfg["outputs"]
 
@@ -108,7 +156,6 @@ def main() -> int:
     if not kml_path.is_absolute():
         kml_path = repo_root / kml_path
     kml_path = kml_path.resolve()
-
     wkt = parse_kml_to_wkt(kml_path)
 
     platform = asf_enum(asf.PLATFORM, search_cfg["platform"], "platform")
@@ -131,9 +178,16 @@ def main() -> int:
         end=search_cfg["end"],
         intersectsWith=wkt,
     )
-    results = sorted(search_results, key=lambda item: item.properties.get("startTime", ""))
+    all_results_sorted = sorted(
+        search_results, key=lambda item: item.properties.get("startTime", "")
+    )
+    full_unique_dates = sorted({item.properties["startTime"][:10] for item in all_results_sorted})
 
-    unique_dates = sorted({item.properties["startTime"][:10] for item in results})
+    results, selected_dates = apply_selection_policy(
+        all_results_sorted,
+        selection_cfg,
+        search_cfg["reference_date"],
+    )
     scene_names = [item.properties.get("sceneName", "") for item in results]
 
     out_root = Path(out_cfg["root"])
@@ -153,11 +207,19 @@ def main() -> int:
     scene_list_path.write_text("\n".join(scene_names) + "\n", encoding="utf-8")
     write_scene_csv(scene_csv_path, results)
 
-    geojson = {"type": "FeatureCollection", "features": []}
+    full_geojson = {"type": "FeatureCollection", "features": []}
     if search_results:
-        geojson = search_results.geojson()
+        full_geojson = search_results.geojson()
+    selected_set = set(scene_names)
+    geojson = filter_geojson(full_geojson, selected_set)
     geojson_path.write_text(json.dumps(geojson, indent=2), encoding="utf-8")
     wkt_path.write_text(wkt + "\n", encoding="utf-8")
+
+    selected_bytes = [
+        int(item.properties.get("bytes", 0))
+        for item in results
+        if item.properties.get("bytes") is not None
+    ]
 
     summary = {
         "stack_name": cfg["project"]["name"],
@@ -170,23 +232,36 @@ def main() -> int:
         "beam_mode": search_cfg["beam_mode"],
         "flight_direction": search_cfg["flight_direction"],
         "relative_orbit": relative_orbit,
-        "scene_count": len(results),
-        "unique_date_count": len(unique_dates),
-        "first_date": unique_dates[0] if unique_dates else None,
-        "last_date": unique_dates[-1] if unique_dates else None,
+        "selection_mode": selection_cfg.get("mode", "none"),
+        "selected_scene_count": len(results),
+        "selected_unique_date_count": len(selected_dates),
+        "selected_first_date": selected_dates[0] if selected_dates else None,
+        "selected_last_date": selected_dates[-1] if selected_dates else None,
+        "selected_total_bytes": sum(selected_bytes),
+        "selected_total_gb_decimal": round(sum(selected_bytes) / 1e9, 2),
+        "full_scene_count": len(all_results_sorted),
+        "full_unique_date_count": len(full_unique_dates),
+        "full_first_date": full_unique_dates[0] if full_unique_dates else None,
+        "full_last_date": full_unique_dates[-1] if full_unique_dates else None,
     }
     summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
 
     expected_scenes = int(search_cfg.get("expected_scenes", len(results)))
-    expected_dates = int(search_cfg.get("expected_unique_dates", len(unique_dates)))
+    expected_dates = int(search_cfg.get("expected_unique_dates", len(selected_dates)))
     scene_ok = len(results) == expected_scenes
-    date_ok = len(unique_dates) == expected_dates
+    date_ok = len(selected_dates) == expected_dates
 
     print(f"Config: {config_path}")
     print(f"AOI: {kml_path}")
-    print(f"Scenes: {len(results)} (expected {expected_scenes})")
-    print(f"Unique dates: {len(unique_dates)} (expected {expected_dates})")
-    print(f"Date span: {summary['first_date']} -> {summary['last_date']}")
+    print(
+        f"Selected scenes: {len(results)} (expected {expected_scenes})"
+        f" | Full matches: {len(all_results_sorted)}"
+    )
+    print(
+        f"Selected dates: {len(selected_dates)} (expected {expected_dates})"
+        f" | Date span: {summary['selected_first_date']} -> {summary['selected_last_date']}"
+    )
+    print(f"Selected volume: {summary['selected_total_gb_decimal']} GB (decimal)")
     print(f"Scene list: {scene_list_path}")
     print(f"Metadata CSV: {scene_csv_path}")
     print(f"GeoJSON: {geojson_path}")
@@ -195,7 +270,6 @@ def main() -> int:
     if (not scene_ok or not date_ok) and not args.allow_mismatch:
         print("Count mismatch detected. Use --allow-mismatch to continue anyway.", file=sys.stderr)
         return 2
-
     return 0
 
 

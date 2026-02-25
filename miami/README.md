@@ -13,17 +13,19 @@
 
 ## Stack Definition
 - AOI: `miami/aux/bbox.kml`
-- Time range: `2015-09-19` to `2022-04-30`
+- Time range: `2015-09-21` to `2022-04-30`
 - Reference date: `2015-09-21`
 - Sensor: Sentinel-1 IW SLC
 - Direction/Track: Ascending / Relative Orbit 48
-- Expected count: `161` scenes, `161` unique dates
+- Selection policy: first `20` acquisition dates starting at reference date
+- Expected selected count: `20` scenes, `20` unique dates
+- Full-match context (before subsetting): `161` scenes, `161` unique dates
 
 ## Run Search
 From repo root:
 
 ```bash
-mamba run -n isce3-feb python scripts/search_s1_stack.py \
+mamba run -n isce3-feb python miami/scripts/search_s1_stack.py \
   --repo-root /home/niels/course/2025-isceplus \
   --config miami/insar/us_isleofnormandy_s1_asc_t48/config/stack.toml
 ```

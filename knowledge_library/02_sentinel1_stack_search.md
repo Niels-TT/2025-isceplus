@@ -47,7 +47,7 @@ Why: Standard structure makes automation and debugging predictable.
 Why: Generate machine-usable scene lists with explicit reproducibility.
 
 ```bash
-mamba run -n isce3-feb python /home/niels/course/2025-isceplus/scripts/search_s1_stack.py \
+mamba run -n isce3-feb python /home/niels/course/2025-isceplus/miami/scripts/search_s1_stack.py \
   --repo-root /home/niels/course/2025-isceplus \
   --config miami/insar/us_isleofnormandy_s1_asc_t48/config/stack.toml
 ```
@@ -63,19 +63,23 @@ What the script does:
 Why: Count checks catch parameter drift before expensive downstream work.
 
 Check:
-- `scene_count` and `unique_date_count` in `summary.json`
+- `selected_scene_count` and `selected_unique_date_count` in `summary.json`
 - first/last date
 - reference date is present in `scene_names.txt`
 
 Example (current Miami stack):
-- expected `161/161`
-- found `161/161`
-- span `2015-09-21` to `2022-04-29`
+- expected selected `20/20`
+- found selected `20/20` (from full `161/161`)
+- selected span `2015-09-21` to `2017-03-26`
 
 ## Storage Planning Before Download
 Why: Sentinel-1 SLC stacks are large; full-stack pull can exceed local free space.
 
-For current stack (`161` scenes):
+For current selected stack (`20` scenes):
+- total size from ASF metadata: about `92.36 GB` decimal
+- average scene size: about `4.62 GB`
+
+For full stack context (`161` scenes):
 - total size from ASF metadata: about `681 GB` decimal (`634 GiB`)
 - average scene size: about `4.23 GB`
 

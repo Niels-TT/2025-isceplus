@@ -3,7 +3,10 @@
 ## Current State
 - Stack config is in `config/stack.toml`
 - ASF query output is in `search/`
-- `search/products/scene_names.txt` contains 161 S1 IW SLC scenes
+- `search/products/scene_names.txt` contains 20 S1 IW SLC scenes
+- Selection policy: first 20 dates from reference date (`2015-09-21`)
+- Selected span: `2015-09-21` to `2017-03-26`
+- Selected source volume: about `92.36 GB` (decimal)
 
 ## Next Processing Stages
 1. Download SLC + orbit files into a dedicated raw-data location.

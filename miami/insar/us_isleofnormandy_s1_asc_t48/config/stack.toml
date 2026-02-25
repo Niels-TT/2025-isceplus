@@ -11,11 +11,16 @@ processing_level = "SLC"
 beam_mode = "IW"
 flight_direction = "ASCENDING"
 relative_orbit = 48
-start = "2015-09-19T00:00:00Z"
+start = "2015-09-21T00:00:00Z"
 end = "2022-04-30T23:59:59Z"
 reference_date = "2015-09-21"
-expected_scenes = 161
-expected_unique_dates = 161
+expected_scenes = 20
+expected_unique_dates = 20
+
+[selection]
+mode = "first_n_from_reference"
+max_dates = 20
+require_reference = true
 
 [outputs]
 root = "miami/insar/us_isleofnormandy_s1_asc_t48/search"
