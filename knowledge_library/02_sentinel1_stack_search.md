@@ -101,6 +101,9 @@ Why: Controlled progression reduces risk and preserves traceability.
 3. Run coregistration workflow.
 4. Run Dolphin time-series workflow.
 
+For the concrete post-download workflow, see:
+- `knowledge_library/03_post_download_preprocessing_compass.md`
+
 ## Download Step (Current Miami Workflow)
 Why: keep download logic explicit and storage-safe instead of auto-pulling by accident.
 
