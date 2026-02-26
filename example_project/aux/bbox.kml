@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>replace_with_your_aoi</name>
+    <Placemark>
+      <name>replace_with_your_aoi</name>
+      <Polygon>
+        <outerBoundaryIs>
+          <LinearRing>
+            <coordinates>
+              -80.1856,25.8184,0
+              -80.0974,25.8184,0
+              -80.0974,25.9290,0
+              -80.1856,25.9290,0
+              -80.1856,25.8184,0
+            </coordinates>
+          </LinearRing>
+        </outerBoundaryIs>
+      </Polygon>
+    </Placemark>
+  </Document>
+</kml>

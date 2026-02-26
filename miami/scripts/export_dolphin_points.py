@@ -152,6 +152,7 @@ def select_points(
     use_ps_mask: bool,
     stride: int,
     max_points: int,
+    strict_grid_match: bool,
 ) -> tuple[SelectedPoints, dict[str, Any]]:
     """Select valid points from Dolphin rasters.
 
@@ -163,6 +164,8 @@ def select_points(
         use_ps_mask: Whether to keep only PS pixels.
         stride: Regular pixel decimation stride.
         max_points: Max point count after selection.
+        strict_grid_match: If True, fail when coherence/PS rasters are not on
+            the same grid as velocity raster.
 
     Returns:
         Selected points and selection statistics dictionary.
@@ -186,6 +189,10 @@ def select_points(
                     valid &= coh_valid
                     valid &= coh_arr >= min_temporal_coherence
                 else:
+                    if strict_grid_match:
+                        raise RuntimeError(
+                            "Temporal coherence raster grid does not match velocity grid."
+                        )
                     coh_arr = None
 
         ps_arr: np.ndarray | None = None
@@ -196,6 +203,10 @@ def select_points(
                     if use_ps_mask:
                         valid &= ps_arr > 0
                 else:
+                    if strict_grid_match:
+                        raise RuntimeError(
+                            "PS mask raster grid does not match velocity grid."
+                        )
                     ps_arr = None
 
         if stride < 1:
@@ -435,6 +446,7 @@ def main() -> int:
     use_ps_mask = bool_cfg(export_cfg, "use_ps_mask", False)
     stride = int_cfg(export_cfg, "stride", 4)
     max_points = int_cfg(export_cfg, "max_points", 80000)
+    strict_grid_match = bool_cfg(export_cfg, "strict_grid_match", True)
     altitude_scale = float_cfg(export_cfg, "altitude_scale_m_per_mm_per_year", 3.0)
     clip_abs = float_cfg(export_cfg, "color_clip_abs_mm_per_year", 30.0)
     name_prefix = str_cfg(export_cfg, "name_prefix", "dolphin")
@@ -461,6 +473,7 @@ def main() -> int:
     print(f"CSV enabled: {csv_enabled} -> {csv_file}")
     print(f"KMZ enabled: {kmz_enabled} -> {kmz_file}")
     print(f"Filters: min_coherence={min_coh}, use_ps_mask={use_ps_mask}, stride={stride}, max_points={max_points}")
+    print(f"Strict grid match: {strict_grid_match}")
     print(f"KMZ altitude scale (m per mm/yr): {altitude_scale}")
     print(f"KMZ color clip abs (mm/yr): {clip_abs}")
 
@@ -475,6 +488,7 @@ def main() -> int:
         use_ps_mask=use_ps_mask,
         stride=stride,
         max_points=max_points,
+        strict_grid_match=strict_grid_match,
     )
 
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -502,6 +516,7 @@ def main() -> int:
         "use_ps_mask": use_ps_mask,
         "stride": stride,
         "max_points": max_points,
+        "strict_grid_match": strict_grid_match,
         "altitude_scale_m_per_mm_per_year": altitude_scale,
         "color_clip_abs_mm_per_year": clip_abs,
         "stats": stats,

@@ -1,5 +1,5 @@
 # 2025-isceplus
-Course materials for the [2025 Technical Short Course: InSAR Processing and Analysis (ISCE+)](https://www.earthscope.org/event/insar-processing-and-analysis-isce/) plus a local end-to-end Miami InSAR workflow.
+Course materials for the [2025 Technical Short Course: InSAR Processing and Analysis (ISCE+)](https://www.earthscope.org/event/insar-processing-and-analysis-isce/) plus reusable local InSAR workflows built around ISCE3, COMPASS, and Dolphin.
 
 ## Start Here (WSL2 + Linux)
 Why: this repo is built around Linux-native geospatial tooling (`isce3`, `compass`, `dolphin`, GDAL).
@@ -43,14 +43,36 @@ bash scripts/check_credentials.sh
 If checks fail, follow:
 - `knowledge_library/01_credentials_earthdata_opentopography.md`
 
+## Reusable Project Scaffold
+Why: this repo now supports creating new AOI projects without editing Miami files.
+
+Create a new project from template:
+
+```bash
+python scripts/create_project_from_example.py \
+  --repo-root . \
+  --project-name my_city
+```
+
+Then follow:
+- `example_project/README.md` (full end-to-end instructions)
+- `projects/my_city/.../config/processing_configuration.toml` (project-specific settings)
+
+Useful setup helpers:
+- `scripts/discover_s1_candidates.py`: discover candidate direction/orbit/frame geometry coverage before locking search settings.
+- `scripts/suggest_reference_date.py`: suggest a reference date from your searched stack dates.
+
 ## Repo Layout
 - `course/`: course notebooks and lesson material (reference/tutorial content)
 - `envs/`: conda environment files
-- `miami/`: active project pipeline and scripts
+- `miami/`: current Miami project + shared pipeline scripts
+- `example_project/`: reusable project template
+- `projects/`: generated/custom project workspaces
 - `knowledge_library/`: step-by-step runbooks for recurring tasks
-- `scripts/check_credentials.sh`: credential validation helper
+- `scripts/`: project bootstrap/discovery/credential helpers
 
 ## Next Docs
 - Pipeline run order: `miami/README.md`
+- Generic project workflow: `example_project/README.md`
 - Project-specific status/details: `miami/insar/us_isleofnormandy_s1_asc_t48/README.md`
 - Learning runbooks: `knowledge_library/README.md`

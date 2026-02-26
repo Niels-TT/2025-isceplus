@@ -29,3 +29,4 @@ python -m pip -V
 2. [02_sentinel1_stack_search.md](./02_sentinel1_stack_search.md)
 3. [03_post_download_preprocessing_compass.md](./03_post_download_preprocessing_compass.md)
 4. [04_dolphin_timeseries_from_compass_cslc.md](./04_dolphin_timeseries_from_compass_cslc.md)
+5. [05_new_project_setup_and_decisions.md](./05_new_project_setup_and_decisions.md)

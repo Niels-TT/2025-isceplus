@@ -15,6 +15,19 @@ Search-first prevents downloading the wrong stack and avoids accidental storage 
 - Beam mode (`IW`)
 - Optional reference date
 
+## Geometry Discovery (Script + Vertex)
+Why: choosing direction/orbit/frame from coverage statistics is more reliable than guessing.
+
+Script-assisted discovery:
+
+```bash
+mamba run -n isce3-feb python scripts/discover_s1_candidates.py \
+  --repo-root . \
+  --config <your_config.toml>
+```
+
+Then optionally validate in ASF Vertex.
+
 ## Discovery in ASF Vertex (Manual Recon)
 Why: Vertex is the fastest way to explore what exists before hard-coding parameters.
 
@@ -31,12 +44,12 @@ Use manual recon when:
 - coverage is sparse
 - you need confidence in scene availability
 
-## Local Project Layout (Current Miami Example)
-Why: Standard structure makes automation and debugging predictable.
+## Local Project Layout (Generic)
+Why: standard structure keeps automation and debugging predictable across AOIs.
 
-- `miami/aux/bbox.kml` (source AOI)
-- `miami/insar/us_isleofnormandy_s1_asc_t48/config/processing_configuration.toml`
-- `miami/insar/us_isleofnormandy_s1_asc_t48/search/`
+- `<project_root>/aux/bbox.kml` (source AOI)
+- `<project_root>/insar/<stack_name>/config/processing_configuration.toml`
+- `<project_root>/insar/<stack_name>/search/`
   - `products/scene_names.txt`
   - `products/scenes.csv`
   - `products/summary.json`
@@ -47,9 +60,9 @@ Why: Standard structure makes automation and debugging predictable.
 Why: Generate machine-usable scene lists with explicit reproducibility.
 
 ```bash
-mamba run -n isce3-feb python /home/niels/course/2025-isceplus/miami/scripts/search_s1_stack.py \
-  --repo-root /home/niels/course/2025-isceplus \
-  --config miami/insar/us_isleofnormandy_s1_asc_t48/config/processing_configuration.toml
+mamba run -n isce3-feb python miami/scripts/search_s1_stack.py \
+  --repo-root . \
+  --config <your_config.toml>
 ```
 
 What the script does:
@@ -67,10 +80,18 @@ Check:
 - first/last date
 - reference date is present in `scene_names.txt`
 
-Example (current Miami stack):
+Example (Miami stack):
 - expected selected `20/20`
 - found selected `20/20` (from full `161/161`)
 - selected span `2015-09-21` to `2017-03-26`
+
+Optional helper after search:
+
+```bash
+mamba run -n isce3-feb python scripts/suggest_reference_date.py \
+  --repo-root . \
+  --config <your_config.toml>
+```
 
 ## Storage Planning Before Download
 Why: Sentinel-1 SLC stacks are large; full-stack pull can exceed local free space.
@@ -110,17 +131,17 @@ Why: keep download logic explicit and storage-safe instead of auto-pulling by ac
 Dry-run:
 
 ```bash
-mamba run -n isce3-feb python /home/niels/course/2025-isceplus/miami/scripts/download_s1_stack.py \
-  --repo-root /home/niels/course/2025-isceplus \
-  --config miami/insar/us_isleofnormandy_s1_asc_t48/config/processing_configuration.toml
+mamba run -n isce3-feb python miami/scripts/download_s1_stack.py \
+  --repo-root . \
+  --config <your_config.toml>
 ```
 
 Execute:
 
 ```bash
-mamba run -n isce3-feb python /home/niels/course/2025-isceplus/miami/scripts/download_s1_stack.py \
-  --repo-root /home/niels/course/2025-isceplus \
-  --config miami/insar/us_isleofnormandy_s1_asc_t48/config/processing_configuration.toml \
+mamba run -n isce3-feb python miami/scripts/download_s1_stack.py \
+  --repo-root . \
+  --config <your_config.toml> \
   --download
 ```
 

@@ -484,10 +484,22 @@ def main() -> int:
     except ValueError as exc:
         print(f"Invalid processing.dolphin.extra_cli_args: {exc}", file=sys.stderr)
         return 2
+    allow_raw_extra_cli_args = bool_cfg(dolphin_cfg, "allow_raw_extra_cli_args", False)
     try:
         option_overrides = dict_of_overrides(dolphin_cfg.get("option_overrides", {}))
     except ValueError as exc:
         print(f"Invalid processing.dolphin.option_overrides: {exc}", file=sys.stderr)
+        return 2
+    if extra_cli_args and not allow_raw_extra_cli_args:
+        print(
+            "processing.dolphin.extra_cli_args is set, but raw passthrough is disabled by default.",
+            file=sys.stderr,
+        )
+        print(
+            "Use processing.dolphin.option_overrides for structured options, or set "
+            "processing.dolphin.allow_raw_extra_cli_args=true to permit raw args.",
+            file=sys.stderr,
+        )
         return 2
 
     if not command_exists("dolphin"):
@@ -710,7 +722,7 @@ def main() -> int:
             )
             return 2
 
-    cmd += ["--cslc", *[str(p) for p in valid_cslc]]
+    cmd += ["--cslc-file-list", str(cslc_file_list)]
     cmd += extra_cli_args
 
     reference_template_file = (
@@ -748,6 +760,7 @@ def main() -> int:
     print(f"BBox (W,S,E,N): {west:.6f}, {south:.6f}, {east:.6f}, {north:.6f}")
     print(f"Dolphin option_overrides from TOML: {len(option_overrides)}")
     print(f"Extra Dolphin CLI args from TOML: {len(extra_cli_args)}")
+    print(f"Raw extra_cli_args allowed: {allow_raw_extra_cli_args}")
     print("\nDolphin config command:")
     print(" ".join(cmd))
     if reference_cmd is not None:
@@ -790,6 +803,7 @@ def main() -> int:
         "bbox_wsen": [west, south, east, north],
         "option_overrides": option_overrides,
         "extra_cli_args": extra_cli_args,
+        "allow_raw_extra_cli_args": allow_raw_extra_cli_args,
         "reference_template_file": str(reference_template_file) if reference_template_file else None,
         "command": cmd,
     }

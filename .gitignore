@@ -9,6 +9,7 @@
 # Miami project: generated search artifacts
 miami/insar/*/search/products/**
 miami/insar/*/search/raw/**
+miami/insar/*/search/candidates/**
 !miami/insar/*/search/products/.gitkeep
 !miami/insar/*/search/raw/.gitkeep
 
@@ -17,4 +18,17 @@ miami/insar/*/stack/**
 !miami/insar/*/stack/.gitkeep
 miami/insar/*/logs/**
 !miami/insar/*/logs/.gitkeep
+
+# Generated custom projects (from example scaffold)
+projects/*/insar/*/search/products/**
+projects/*/insar/*/search/raw/**
+projects/*/insar/*/search/candidates/**
+!projects/*/insar/*/search/products/.gitkeep
+!projects/*/insar/*/search/raw/.gitkeep
+projects/*/insar/*/stack/**
+!projects/*/insar/*/stack/.gitkeep
+projects/*/insar/*/logs/**
+!projects/*/insar/*/logs/.gitkeep
 miami/scripts/__pycache__/**
+tests/__pycache__/**
+scripts/__pycache__/**

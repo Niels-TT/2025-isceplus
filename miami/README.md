@@ -3,6 +3,11 @@
 This folder contains the practical pipeline for:
 `ASF search -> SLC download -> DEM download -> COMPASS coregistration -> Dolphin time series -> optional point export`.
 
+Note:
+- The scripts under `miami/scripts/` are config-driven and reusable for non-Miami projects.
+- Use `--config <your_project>/.../processing_configuration.toml` to run the same pipeline on another AOI.
+- Generic scaffold and setup flow: `example_project/README.md`.
+
 ## Before You Run Anything
 Why: most failures come from running outside WSL, wrong Python, or missing credentials.
 
