@@ -1,5 +1,19 @@
 #!/usr/bin/env python3
-"""Prepare deterministic COMPASS stack run files from local stack inputs."""
+"""Prepare COMPASS run files for stack preprocessing and coregistration setup.
+
+Technical summary:
+    Validates scene completeness, DEM datum policy, and path/config integrity,
+    then builds a deterministic `s1_geocode_stack.py` command and generates
+    COMPASS run files plus a preparation summary.
+
+Why:
+    Catch input issues before expensive processing and keep execution
+    reproducible across reruns.
+
+Note:
+    This stage prepares run files only; execution happens in
+    `run_compass_runfiles.py`.
+"""
 
 from __future__ import annotations
 
@@ -122,7 +136,17 @@ def validate_vertical_datum(dem_cfg: dict) -> tuple[bool, str, bool]:
 
 
 def main() -> int:
-    """Parse CLI args, validate inputs, and generate COMPASS run files.
+    """Parse CLI args, validate preprocessing inputs, and generate run files.
+
+    Why:
+        Catch incomplete SLCs, DEM datum issues, and config errors before the
+        expensive coregistration stage.
+
+    Technical details:
+        - Validates local ZIP presence and exact byte size against `scenes.csv`.
+        - Enforces configured DEM vertical datum policy.
+        - Derives AOI bbox and date window for `s1_geocode_stack.py`.
+        - Generates COMPASS run files and writes `prepare_summary.json`.
 
     Returns:
         Exit code (0 for success).

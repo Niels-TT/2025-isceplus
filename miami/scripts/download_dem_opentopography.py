@@ -1,5 +1,15 @@
 #!/usr/bin/env python3
-"""Download an AOI DEM from OpenTopography using stack configuration."""
+"""Download a DEM for the AOI from OpenTopography.
+
+Technical summary:
+    Reads AOI and DEM settings from stack config, derives a buffered AOI bbox,
+    requests a GeoTIFF DEM from OpenTopography using `~/.topoapi`, writes the
+    DEM file, and stores request metadata in a sidecar JSON.
+
+Why:
+    Provide explicit DEM input (including datum context) for geometric
+    preprocessing/coregistration.
+"""
 
 from __future__ import annotations
 
@@ -96,6 +106,15 @@ def stream_download(url: str, params: dict[str, str], out_path: Path, timeout_s:
 
 def main() -> int:
     """Parse CLI args and download DEM plus request metadata.
+
+    Why:
+        COMPASS geometric preprocessing/coregistration requires a DEM over the
+        area of interest, with explicit datum handling tracked in metadata.
+
+    Technical details:
+        - Supports config-driven DEM type and output path, with CLI overrides.
+        - Uses streamed download with progress bar and atomic `.part` replacement.
+        - Writes a metadata JSON capturing request bbox/demtype and output bytes.
 
     Returns:
         Exit code (0 for success).

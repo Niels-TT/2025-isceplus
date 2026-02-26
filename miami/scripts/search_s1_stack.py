@@ -1,5 +1,14 @@
 #!/usr/bin/env python3
-"""Search Sentinel-1 scenes with ASF and write reproducible stack manifests."""
+"""Search and materialize Sentinel-1 stack candidates from ASF.
+
+Technical summary:
+    Reads stack config, converts KML AOI to WKT, queries ASF with orbit/date
+    constraints, applies local selection policy, and writes products
+    (`scene_names.txt`, `scenes.csv`, `summary.json`, filtered GeoJSON, WKT).
+
+Why:
+    Freezes a reproducible scene list before large downloads and preprocessing.
+"""
 
 from __future__ import annotations
 
@@ -183,6 +192,16 @@ def filter_geojson(full_geojson: dict, selected_scene_names: set[str]) -> dict:
 
 def main() -> int:
     """Parse CLI args, run ASF search, and write stack manifest products.
+
+    Why:
+        Lock a reproducible scene list before any large downloads or
+        preprocessing/coregistration steps.
+
+    Technical details:
+        - Uses `asf_search.search` with platform/beam/orbit/date/AOI filters.
+        - Applies configured date selection policy (e.g., first N from reference).
+        - Writes deterministic search artifacts under `outputs.root`.
+        - Optionally enforces expected scene/date counts.
 
     Returns:
         Exit code (0 for success).

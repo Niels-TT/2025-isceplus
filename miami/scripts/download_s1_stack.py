@@ -1,5 +1,15 @@
 #!/usr/bin/env python3
-"""Download selected Sentinel-1 scenes from ASF with safety checks and progress bars."""
+"""Download selected raw Sentinel-1 SLC ZIPs from ASF.
+
+Technical summary:
+    Reads selected scenes from `scenes.csv`, authenticates with Earthdata
+    credentials from `~/.netrc`, streams each ZIP to `stack/slc`, updates
+    `download_manifest.json`, and enforces disk-space guardrails.
+
+Why:
+    Stage raw inputs safely and reproducibly before DEM/orbit-aware
+    preprocessing and coregistration.
+"""
 
 from __future__ import annotations
 
@@ -299,6 +309,16 @@ def download_url_with_progress(
 
 def main() -> int:
     """Parse CLI args and run dry-run planning or actual downloads.
+
+    Why:
+        Stage raw SLC inputs safely before DEM/orbit-aware preprocessing and
+        coregistration.
+
+    Technical details:
+        - Computes pending scenes from local file size vs expected bytes.
+        - Performs free-space checks with reserve/overhead margins.
+        - Uses streaming HTTP downloads with per-file and stack-level progress.
+        - Records per-scene status transitions in a JSON manifest.
 
     Returns:
         Exit code (0 for success).
