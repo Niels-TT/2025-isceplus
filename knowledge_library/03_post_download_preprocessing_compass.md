@@ -46,7 +46,7 @@ mamba run -n isce3-feb python /home/niels/course/2025-isceplus/miami/scripts/dow
 ```
 
 Current recommended config (in `stack.toml`):
-- `demtype = "SRTM_GL1_Ellip"`
+- `demtype = "SRTMGL1_E"`
 - `vertical_datum = "WGS84_ELLIPSOID"`
 - `require_ellipsoid_heights = true`
 
@@ -65,7 +65,9 @@ What this validate/prepare step enforces:
 - size-mismatch SLC detection (partial or corrupt downloads)
 - explicit DEM vertical datum check
 - deterministic COMPASS command generation with AOI bbox
+- inclusive end-date handling (wrapper passes `end_date + 1 day` to COMPASS `-ed`, which is exclusive)
 - run file generation under `stack/compass/run_files/`
+- orbit cache summary output (`POEORB`/`RESORB`) after prepare run
 
 Then run prepare for real:
 
@@ -109,5 +111,10 @@ After COMPASS runfiles complete cleanly, move to Dolphin pipeline configuration 
   - let downloader finish, then rerun prepare
 - `Vertical datum check failed`:
   - set correct values in `[ancillary.dem]` in `stack.toml`
+- `No single orbit file was found` warning:
+  - this can appear before orbit fallback selection completes
+  - verify final prepare output shows `Orbit status: precise POEORB files are being used.`
+- Last acquisition date missing from run files:
+  - ensure you use the updated `prepare_compass_stack.py` that treats `--end-date` as inclusive
 - Runfile failure:
   - inspect corresponding log under `logs/compass/`

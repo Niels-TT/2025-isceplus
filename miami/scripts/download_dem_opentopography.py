@@ -135,7 +135,7 @@ def main() -> int:
     parser.add_argument(
         "--demtype",
         default="",
-        help="OpenTopography DEM type (e.g. SRTM_GL1_Ellip, COP30). Defaults to stack config.",
+        help="OpenTopography DEM type (e.g. SRTMGL1_E, COP30). Defaults to stack config.",
     )
     parser.add_argument(
         "--buffer-deg",

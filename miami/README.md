@@ -104,7 +104,7 @@ mamba run -n isce3-feb python miami/scripts/download_dem_opentopography.py \
   --config miami/insar/us_isleofnormandy_s1_asc_t48/config/stack.toml
 ```
 
-This stack config uses `SRTM_GL1_Ellip` and sets `vertical_datum = WGS84_ELLIPSOID`.
+This stack config uses `SRTMGL1_E` and sets `vertical_datum = WGS84_ELLIPSOID`.
 Why: this makes DEM height reference explicit and avoids silent datum mismatch in high-precision geometry.
 
 3. Prepare COMPASS stack run files:
@@ -118,6 +118,8 @@ mamba run -n isce3-feb python miami/scripts/prepare_compass_stack.py \
 
 Notes:
 - Orbit retrieval is integrated: missing orbit files are auto-downloaded by COMPASS/S1Reader into `stack/orbits/`.
+- Prepare output reports orbit cache counts and status (`POEORB` vs `RESORB`) after run-file generation.
+- End date is treated as inclusive in this wrapper; it passes `end_date + 1 day` to COMPASS `-ed` (exclusive bound) so the last acquisition date is included.
 - AOI `bbox` is always passed to keep the workflow portable (avoids dependency on private default burst DB paths).
 - Scene completeness is checked before prepare: missing ZIPs and wrong-size ZIPs both stop the run by default.
 
@@ -155,3 +157,11 @@ mamba run -n isce3-feb python miami/scripts/run_compass_runfiles.py \
   --config miami/insar/us_isleofnormandy_s1_asc_t48/config/stack.toml \
   --dry-run
 ```
+
+## Orbit And Date Notes
+Why: these two details commonly cause confusion in first stack runs.
+
+- If you see `No single orbit file was found`, check the final prepare summary lines.
+- High-precision target: `Orbit status: precise POEORB files are being used.`
+- If prepare reports `RESORB-only fallback`, rerun later so POEORB can become available in cache.
+- Date overrides (`--start-date`, `--end-date`) are `YYYYMMDD`; `--end-date` is interpreted inclusively by the wrapper.

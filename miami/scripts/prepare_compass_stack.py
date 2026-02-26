@@ -22,9 +22,11 @@ import json
 import shutil
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlparse
+
+import yaml
 
 from stack_common import (
     buffer_bbox,
@@ -135,6 +137,125 @@ def validate_vertical_datum(dem_cfg: dict) -> tuple[bool, str, bool]:
     return True, vertical_datum, require_ellipsoid
 
 
+def parse_yyyymmdd(value: str) -> date:
+    """Parse a `YYYYMMDD` string to a `date`.
+
+    Args:
+        value: Date string in `YYYYMMDD` format.
+
+    Returns:
+        Parsed date object.
+    """
+    return datetime.strptime(value, "%Y%m%d").date()
+
+
+def summarize_orbit_cache(orbit_root: Path) -> dict[str, int]:
+    """Summarize local orbit cache content by orbit type.
+
+    Args:
+        orbit_root: Orbit cache directory.
+
+    Returns:
+        Counts for total/orbit-type files.
+    """
+    if not orbit_root.exists():
+        return {
+            "total_files": 0,
+            "poeorb_files": 0,
+            "resorb_files": 0,
+            "other_files": 0,
+        }
+
+    files = [p for p in orbit_root.rglob("*") if p.is_file()]
+    poeorb_count = sum("POEORB" in p.name.upper() for p in files)
+    resorb_count = sum("RESORB" in p.name.upper() for p in files)
+    return {
+        "total_files": len(files),
+        "poeorb_files": poeorb_count,
+        "resorb_files": resorb_count,
+        "other_files": len(files) - poeorb_count - resorb_count,
+    }
+
+
+def normalize_polarization_value(value: object) -> tuple[object, str | None]:
+    """Normalize runconfig polarization value for schema compatibility.
+
+    Args:
+        value: Raw value from `runconfig.groups.processing.polarization`.
+
+    Returns:
+        Tuple of normalized value and optional note.
+    """
+    if not isinstance(value, list):
+        return value, None
+
+    values = [str(v).strip() for v in value if str(v).strip()]
+    if not values:
+        return "co-pol", "empty polarization list normalized to co-pol"
+    if len(values) == 1:
+        return values[0], "single-item polarization list normalized to scalar"
+
+    unique = set(values)
+    if unique == {"co-pol", "cross-pol"}:
+        return "dual-pol", "co-pol/cross-pol list normalized to dual-pol"
+    return values[0], f"multi-item polarization list normalized to first item ({values[0]})"
+
+
+def normalize_runconfigs(
+    runconfigs_dir: Path, browse_image_enabled: bool
+) -> tuple[int, int, list[str]]:
+    """Patch generated runconfigs to match installed COMPASS behavior.
+
+    Why:
+        Some COMPASS builds write polarization as a YAML list, while
+        `s1_cslc_geo` schema expects a scalar enum.
+        On some environments (including WSL), browse-image generation can fail
+        due HDF5/GDAL file-access interactions, so it is controlled explicitly.
+
+    Args:
+        runconfigs_dir: Directory containing `geo_runconfig_*.yaml` files.
+        browse_image_enabled: Whether runconfigs should enable browse output.
+
+    Returns:
+        Tuple of:
+        - number of runconfig files changed
+        - number of files where browse-image setting was updated
+        - compatibility notes
+    """
+    changed = 0
+    browse_changed = 0
+    notes: list[str] = []
+    for runconfig in sorted(runconfigs_dir.glob("geo_runconfig_*.yaml")):
+        data = yaml.safe_load(runconfig.read_text(encoding="utf-8"))
+        file_changed = False
+        processing = (
+            data.get("runconfig", {})
+            .get("groups", {})
+            .get("processing", {})
+        )
+        current = processing.get("polarization")
+        normalized, note = normalize_polarization_value(current)
+        if normalized != current:
+            processing["polarization"] = normalized
+            file_changed = True
+        groups = data.setdefault("runconfig", {}).setdefault("groups", {})
+        quality = groups.setdefault("quality_assurance", {})
+        browse = quality.setdefault("browse_image", {})
+        browse_current = bool(browse.get("enabled", True))
+        if browse_current != browse_image_enabled:
+            browse["enabled"] = browse_image_enabled
+            browse_changed += 1
+            file_changed = True
+
+        if not file_changed:
+            continue
+        runconfig.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+        changed += 1
+        if note:
+            notes.append(f"{runconfig.name}: {note}")
+    return changed, browse_changed, notes
+
+
 def main() -> int:
     """Parse CLI args, validate preprocessing inputs, and generate run files.
 
@@ -223,6 +344,8 @@ def main() -> int:
     )
     orbit_dir_value = compass_cfg.get("orbit_dir", "")
     orbit_dir = resolve_path(repo_root, orbit_dir_value) if orbit_dir_value else None
+    burst_db_value = str(compass_cfg.get("burst_db_file", "")).strip()
+    burst_db_file = resolve_path(repo_root, burst_db_value) if burst_db_value else None
 
     if not scene_csv.exists():
         print(f"Missing scene metadata CSV: {scene_csv}", file=sys.stderr)
@@ -238,6 +361,19 @@ def main() -> int:
         return 2
     if not command_exists("s1_geocode_stack.py"):
         print("Missing command: s1_geocode_stack.py. Install COMPASS in isce3-feb.", file=sys.stderr)
+        return 2
+    if burst_db_file is not None and not burst_db_file.exists():
+        print(f"Missing burst DB file: {burst_db_file}", file=sys.stderr)
+        print(
+            "Download OPERA burst DB (SQLite), then rerun prepare. Example:",
+            file=sys.stderr,
+        )
+        print(
+            "curl -L -o "
+            f"{burst_db_file} "
+            "https://github.com/opera-adt/burst_db/releases/download/v0.10.0/opera-burst-bbox-only.sqlite3",
+            file=sys.stderr,
+        )
         return 2
 
     vd_ok, vertical_datum, require_ellipsoid = validate_vertical_datum(dem_cfg)
@@ -297,12 +433,33 @@ def main() -> int:
         if row.get("startTime")
     )
     start_date = args.start_date or (csv_dates[0] if csv_dates else iso_to_yyyymmdd(search_cfg["start"]))
-    end_date = args.end_date or (csv_dates[-1] if csv_dates else iso_to_yyyymmdd(search_cfg["end"]))
+    end_date_inclusive = args.end_date or (
+        csv_dates[-1] if csv_dates else iso_to_yyyymmdd(search_cfg["end"])
+    )
+    try:
+        start_day = parse_yyyymmdd(start_date)
+        end_day_inclusive = parse_yyyymmdd(end_date_inclusive)
+    except ValueError:
+        print(
+            "Invalid date override. Use YYYYMMDD for --start-date/--end-date.",
+            file=sys.stderr,
+        )
+        return 2
+    if end_day_inclusive < start_day:
+        print(
+            f"Invalid date range: end date {end_date_inclusive} is before start date {start_date}.",
+            file=sys.stderr,
+        )
+        return 2
+    # COMPASS treats -ed as an exclusive upper bound, so include the last
+    # acquisition day by passing end_date + 1 day.
+    end_date_exclusive = (end_day_inclusive + timedelta(days=1)).strftime("%Y%m%d")
 
     pol = compass_cfg.get("pol", "co-pol")
     x_spac = float(compass_cfg.get("x_spacing_m", 5.0))
     y_spac = float(compass_cfg.get("y_spacing_m", 10.0))
     common_bursts_only = bool_cfg(compass_cfg, "common_bursts_only", True)
+    browse_image_enabled = bool_cfg(compass_cfg, "browse_image", False)
     flatten = bool_cfg(compass_cfg, "flatten", True)
     corrections = bool_cfg(compass_cfg, "corrections", True)
     output_epsg = compass_cfg.get("output_epsg")
@@ -318,7 +475,7 @@ def main() -> int:
         "-sd",
         start_date,
         "-ed",
-        end_date,
+        end_date_exclusive,
         "-p",
         pol,
         "-dx",
@@ -335,6 +492,8 @@ def main() -> int:
     ]
     if orbit_dir is not None:
         cmd += ["-o", str(orbit_dir)]
+    if burst_db_file is not None:
+        cmd += ["--burst-db-file", str(burst_db_file)]
     if common_bursts_only:
         cmd.append("--common-bursts-only")
     if output_epsg is not None:
@@ -343,6 +502,8 @@ def main() -> int:
         cmd.append("-nf")
     if not corrections:
         cmd.append("-nc")
+
+    effective_orbit_dir = orbit_dir if orbit_dir is not None else (work_dir / "orbits")
 
     print(f"Config: {config_path}")
     print(f"Scene CSV: {scene_csv}")
@@ -353,8 +514,13 @@ def main() -> int:
     print(f"DEM vertical datum: {vertical_datum}")
     print(f"Require ellipsoid heights: {require_ellipsoid}")
     print(f"Work dir: {work_dir}")
-    print(f"Orbit dir: {orbit_dir or '(auto under work_dir/orbits)'}")
-    print(f"Date range: {start_date} -> {end_date}")
+    print(f"Orbit dir: {effective_orbit_dir}")
+    print(f"Burst DB file: {burst_db_file or '(COMPASS default)'}")
+    print(f"Browse image enabled: {browse_image_enabled}")
+    print("Orbit retrieval: COMPASS/S1Reader uses local cache and auto-downloads missing files.")
+    print("Orbit preference: POEORB (precise) first; RESORB only as fallback.")
+    print(f"Date range (requested inclusive): {start_date} -> {end_date_inclusive}")
+    print(f"Date range (passed to COMPASS; exclusive end): {start_date} -> {end_date_exclusive}")
     print(f"BBox (W,S,E,N): {west:.6f}, {south:.6f}, {east:.6f}, {north:.6f}")
     print(f"Scene rows in CSV: {len(scene_rows)}")
     print(f"Missing scenes on disk: {len(missing_scenes)}")
@@ -372,6 +538,11 @@ def main() -> int:
     subprocess.run(cmd, check=True)
 
     run_files = sorted((work_dir / "run_files").glob("run_*.sh"))
+    runconfig_dir = work_dir / "runconfigs"
+    runconfig_fix_count, browse_fix_count, pol_fix_notes = normalize_runconfigs(
+        runconfig_dir, browse_image_enabled=browse_image_enabled
+    )
+    orbit_summary = summarize_orbit_cache(effective_orbit_dir)
     summary = {
         "prepared_utc": datetime.now(timezone.utc).isoformat(),
         "config": str(config_path),
@@ -380,20 +551,48 @@ def main() -> int:
         "missing_scene_count": len(missing_scenes),
         "size_mismatch_scene_count": len(size_mismatch),
         "work_dir": str(work_dir),
-        "orbit_dir": str(orbit_dir) if orbit_dir else None,
+        "orbit_dir": str(effective_orbit_dir),
+        "burst_db_file": str(burst_db_file) if burst_db_file else None,
         "dem_file": str(dem_file),
         "dem_vertical_datum": vertical_datum,
         "require_ellipsoid_heights": require_ellipsoid,
         "command": cmd,
         "date_start": start_date,
-        "date_end": end_date,
+        "date_end_inclusive": end_date_inclusive,
+        "date_end_exclusive_for_compass": end_date_exclusive,
         "bbox_wsen": [west, south, east, north],
         "run_file_count": len(run_files),
+        "runconfig_fix_count": runconfig_fix_count,
+        "runconfig_browse_image_fix_count": browse_fix_count,
+        "runconfig_polarization_fix_count": len(pol_fix_notes),
+        "runconfig_polarization_fix_notes": pol_fix_notes,
+        "orbit_cache_summary": orbit_summary,
     }
     summary_path = work_dir / "prepare_summary.json"
     summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
 
     print(f"\nPrepared run files: {len(run_files)}")
+    print(
+        "Runconfig compatibility fixes: "
+        f"{runconfig_fix_count} files updated "
+        f"(polarization notes: {len(pol_fix_notes)}, "
+        f"browse-image setting updates: {browse_fix_count})."
+    )
+    print(
+        "Orbit cache summary: "
+        f"{orbit_summary['poeorb_files']} POEORB, "
+        f"{orbit_summary['resorb_files']} RESORB, "
+        f"{orbit_summary['other_files']} other files "
+        f"(total {orbit_summary['total_files']})."
+    )
+    if orbit_summary["poeorb_files"] > 0 and orbit_summary["resorb_files"] == 0:
+        print("Orbit status: precise POEORB files are being used.")
+    elif orbit_summary["resorb_files"] > 0 and orbit_summary["poeorb_files"] == 0:
+        print("Orbit status: RESORB-only fallback currently in use.", file=sys.stderr)
+    elif orbit_summary["resorb_files"] > 0 and orbit_summary["poeorb_files"] > 0:
+        print("Orbit status: mixed POEORB/RESORB cache.", file=sys.stderr)
+    else:
+        print("Orbit status: no local orbit files detected in cache.", file=sys.stderr)
     print(f"Summary: {summary_path}")
     print("Next: run miami/scripts/run_compass_runfiles.py to execute coregistration.")
     return 0

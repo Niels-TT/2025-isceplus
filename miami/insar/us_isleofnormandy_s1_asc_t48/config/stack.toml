@@ -36,7 +36,7 @@ download_manifest = "miami/insar/us_isleofnormandy_s1_asc_t48/stack/download_man
 
 [ancillary.dem]
 file = "miami/insar/us_isleofnormandy_s1_asc_t48/stack/dem/opentopo_srtm_gl1_ellip.tif"
-demtype = "SRTM_GL1_Ellip"
+demtype = "SRTMGL1_E"
 bbox_buffer_deg = 0.02
 vertical_datum = "WGS84_ELLIPSOID"
 require_ellipsoid_heights = true
@@ -44,8 +44,11 @@ require_ellipsoid_heights = true
 [processing.compass]
 work_dir = "miami/insar/us_isleofnormandy_s1_asc_t48/stack/compass"
 orbit_dir = "miami/insar/us_isleofnormandy_s1_asc_t48/stack/orbits"
+burst_db_file = "miami/insar/us_isleofnormandy_s1_asc_t48/stack/compass/opera-burst-bbox-only.sqlite3"
 logs_dir = "miami/insar/us_isleofnormandy_s1_asc_t48/logs/compass"
 common_bursts_only = true
+browse_image = false
+disable_hdf5_file_locking = true
 pol = "co-pol"
 x_spacing_m = 5.0
 y_spacing_m = 10.0

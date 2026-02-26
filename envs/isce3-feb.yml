@@ -28,3 +28,6 @@ dependencies:
   - matplotlib
   - ipympl
   - ipywidgets
+
+  # Other
+  - tqdm
