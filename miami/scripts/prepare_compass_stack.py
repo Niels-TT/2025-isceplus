@@ -29,6 +29,7 @@ from urllib.parse import urlparse
 import yaml
 
 from stack_common import (
+    DEFAULT_STACK_CONFIG_REL,
     buffer_bbox,
     iso_to_yyyymmdd,
     kml_bbox,
@@ -201,9 +202,41 @@ def normalize_polarization_value(value: object) -> tuple[object, str | None]:
     return values[0], f"multi-item polarization list normalized to first item ({values[0]})"
 
 
+def validate_runconfig_schema(data: object, runconfig: Path) -> tuple[bool, str]:
+    """Validate expected runconfig schema before applying compatibility patches.
+
+    Args:
+        data: Parsed runconfig YAML object.
+        runconfig: Source runconfig path.
+
+    Returns:
+        Tuple of (is_valid, message).
+    """
+    if not isinstance(data, dict):
+        return False, f"{runconfig.name}: top-level YAML is not a mapping"
+    rc = data.get("runconfig")
+    if not isinstance(rc, dict):
+        return False, f"{runconfig.name}: missing 'runconfig' mapping"
+    groups = rc.get("groups")
+    if not isinstance(groups, dict):
+        return False, f"{runconfig.name}: missing 'runconfig.groups' mapping"
+    processing = groups.get("processing")
+    if not isinstance(processing, dict):
+        return False, f"{runconfig.name}: missing 'runconfig.groups.processing' mapping"
+    if "polarization" not in processing:
+        return False, f"{runconfig.name}: missing 'runconfig.groups.processing.polarization'"
+    quality = groups.get("quality_assurance")
+    if quality is not None and not isinstance(quality, dict):
+        return False, f"{runconfig.name}: 'runconfig.groups.quality_assurance' is not a mapping"
+    browse = (quality or {}).get("browse_image")
+    if browse is not None and not isinstance(browse, dict):
+        return False, f"{runconfig.name}: 'runconfig.groups.quality_assurance.browse_image' is not a mapping"
+    return True, "ok"
+
+
 def normalize_runconfigs(
     runconfigs_dir: Path, browse_image_enabled: bool
-) -> tuple[int, int, list[str]]:
+) -> tuple[int, int, list[str], list[str]]:
     """Patch generated runconfigs to match installed COMPASS behavior.
 
     Why:
@@ -221,12 +254,18 @@ def normalize_runconfigs(
         - number of runconfig files changed
         - number of files where browse-image setting was updated
         - compatibility notes
+        - schema validation error messages
     """
     changed = 0
     browse_changed = 0
     notes: list[str] = []
+    schema_errors: list[str] = []
     for runconfig in sorted(runconfigs_dir.glob("geo_runconfig_*.yaml")):
         data = yaml.safe_load(runconfig.read_text(encoding="utf-8"))
+        schema_ok, schema_msg = validate_runconfig_schema(data, runconfig)
+        if not schema_ok:
+            schema_errors.append(schema_msg)
+            continue
         file_changed = False
         processing = (
             data.get("runconfig", {})
@@ -253,7 +292,7 @@ def normalize_runconfigs(
         changed += 1
         if note:
             notes.append(f"{runconfig.name}: {note}")
-    return changed, browse_changed, notes
+    return changed, browse_changed, notes, schema_errors
 
 
 def main() -> int:
@@ -280,7 +319,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--config",
-        default="miami/insar/us_isleofnormandy_s1_asc_t48/config/stack.toml",
+        default=DEFAULT_STACK_CONFIG_REL,
         help="Path to stack TOML config.",
     )
     parser.add_argument(
@@ -301,7 +340,7 @@ def main() -> int:
     parser.add_argument(
         "--dem-file",
         default="",
-        help="DEM path override (otherwise read from ancillary.dem.file in stack.toml).",
+        help="DEM path override (otherwise read from ancillary.dem.file in processing_configuration.toml).",
     )
     parser.add_argument(
         "--start-date",
@@ -332,7 +371,7 @@ def main() -> int:
     dem_value = args.dem_file or dem_cfg.get("file", "")
     if not dem_value:
         print(
-            "No DEM path configured. Set ancillary.dem.file in stack.toml or pass --dem-file.",
+            "No DEM path configured. Set ancillary.dem.file in processing_configuration.toml or pass --dem-file.",
             file=sys.stderr,
         )
         return 2
@@ -391,7 +430,7 @@ def main() -> int:
                 file=sys.stderr,
             )
         print(
-            "Set an explicit vertical datum in stack.toml for reproducible geometry handling.",
+            "Set an explicit vertical datum in processing_configuration.toml for reproducible geometry handling.",
             file=sys.stderr,
         )
         return 2
@@ -539,9 +578,27 @@ def main() -> int:
 
     run_files = sorted((work_dir / "run_files").glob("run_*.sh"))
     runconfig_dir = work_dir / "runconfigs"
-    runconfig_fix_count, browse_fix_count, pol_fix_notes = normalize_runconfigs(
+    (
+        runconfig_fix_count,
+        browse_fix_count,
+        pol_fix_notes,
+        schema_errors,
+    ) = normalize_runconfigs(
         runconfig_dir, browse_image_enabled=browse_image_enabled
     )
+    if schema_errors:
+        print(
+            "Runconfig schema check failed for generated COMPASS runconfigs. "
+            "This usually means an upstream COMPASS schema change.",
+            file=sys.stderr,
+        )
+        for msg in schema_errors:
+            print(f"  - {msg}", file=sys.stderr)
+        print(
+            "Update normalize_runconfigs compatibility logic before continuing.",
+            file=sys.stderr,
+        )
+        return 5
     orbit_summary = summarize_orbit_cache(effective_orbit_dir)
     summary = {
         "prepared_utc": datetime.now(timezone.utc).isoformat(),
@@ -566,6 +623,8 @@ def main() -> int:
         "runconfig_browse_image_fix_count": browse_fix_count,
         "runconfig_polarization_fix_count": len(pol_fix_notes),
         "runconfig_polarization_fix_notes": pol_fix_notes,
+        "runconfig_schema_error_count": len(schema_errors),
+        "runconfig_schema_errors": schema_errors,
         "orbit_cache_summary": orbit_summary,
     }
     summary_path = work_dir / "prepare_summary.json"

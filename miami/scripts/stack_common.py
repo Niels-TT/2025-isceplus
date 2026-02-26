@@ -11,6 +11,9 @@ from typing import Iterable
 from urllib.parse import urlparse
 
 KML_NS = {"kml": "http://www.opengis.net/kml/2.2"}
+DEFAULT_STACK_CONFIG_REL = (
+    "miami/insar/us_isleofnormandy_s1_asc_t48/config/processing_configuration.toml"
+)
 
 
 def read_toml(path: Path) -> dict:

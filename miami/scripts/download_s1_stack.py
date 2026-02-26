@@ -19,7 +19,6 @@ import json
 import netrc
 import shutil
 import sys
-import tomllib
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -27,6 +26,8 @@ from urllib.parse import urlparse
 
 import asf_search as asf
 from tqdm import tqdm
+
+from stack_common import DEFAULT_STACK_CONFIG_REL, read_toml, resolve_path
 
 
 @dataclass
@@ -58,33 +59,6 @@ def strip_auth_if_aws(response, *args, **kwargs):
         location = response.headers["location"]
         response.headers.clear()
         response.headers["location"] = location
-
-
-def read_toml(path: Path) -> dict:
-    """Load a TOML file into a dictionary.
-
-    Args:
-        path: TOML file path.
-
-    Returns:
-        Parsed TOML content.
-    """
-    with path.open("rb") as f:
-        return tomllib.load(f)
-
-
-def resolve_path(repo_root: Path, path_value: str) -> Path:
-    """Resolve an absolute or repo-relative path.
-
-    Args:
-        repo_root: Repository root directory.
-        path_value: Path string from config or CLI.
-
-    Returns:
-        Absolute resolved path.
-    """
-    p = Path(path_value)
-    return p if p.is_absolute() else (repo_root / p).resolve()
 
 
 def read_earthdata_creds() -> tuple[str, str]:
@@ -331,7 +305,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--config",
-        default="miami/insar/us_isleofnormandy_s1_asc_t48/config/stack.toml",
+        default=DEFAULT_STACK_CONFIG_REL,
         help="Path to stack TOML config.",
     )
     parser.add_argument(

@@ -5,7 +5,7 @@
 - `aux/bbox.kml`: AOI polygon (source of truth)
 - `bbox.kml`: symlink to `aux/bbox.kml` for convenience
 - `insar/us_isleofnormandy_s1_asc_t48/`
-- `insar/us_isleofnormandy_s1_asc_t48/config/stack.toml`: stack + processing config
+- `insar/us_isleofnormandy_s1_asc_t48/config/processing_configuration.toml`: stack + processing config
 - `insar/us_isleofnormandy_s1_asc_t48/search/`: ASF search outputs
 - `insar/us_isleofnormandy_s1_asc_t48/stack/slc/`: downloaded Sentinel-1 ZIPs
 - `insar/us_isleofnormandy_s1_asc_t48/stack/dem/`: AOI DEM from OpenTopography
@@ -27,6 +27,8 @@
 - `miami/scripts/download_dem_opentopography.py`: AOI DEM downloader from OpenTopography
 - `miami/scripts/prepare_compass_stack.py`: builds COMPASS run files (with integrated orbit retrieval)
 - `miami/scripts/run_compass_runfiles.py`: executes generated COMPASS run files with resume state
+- `miami/scripts/prepare_dolphin_workflow.py`: validates COMPASS CSLC outputs and writes Dolphin config
+- `miami/scripts/run_dolphin_workflow.py`: executes `dolphin run` from prepared YAML config
 
 ## Alignment With Official Workflows
 Why: this clarifies what is standard OPERA/ISCE3 workflow vs project-specific orchestration.
@@ -47,7 +49,8 @@ Reference repos/docs:
 - COMPASS: https://github.com/opera-adt/COMPASS
 - COMPASS docs: https://opera-compass.readthedocs.io/en/latest/
 - s1-reader: https://github.com/opera-adt/s1-reader
-- Dolphin: https://github.com/opera-adt/dolphin
+- Dolphin: https://github.com/isce-framework/dolphin
+- Dolphin docs: https://dolphin-insar.readthedocs.io/
 - ISCE3: https://github.com/isce-framework/isce3
 - ASF Search docs: https://docs.asf.alaska.edu/asf_search/
 
@@ -64,6 +67,32 @@ Why: explicit paths make every run reproducible and avoid hidden working-directo
 - `--config` picks the exact stack definition.
 - `--repo-root` forces stable relative-path resolution.
 - Commands can be copy-pasted into notes/issues and replayed exactly.
+- This README is the canonical command source for this project.
+
+## Step Inputs/Outputs
+Why: concise I/O mapping makes each stage auditable and easier to debug.
+
+- Search (`search_s1_stack.py`)
+  - Inputs: `processing_configuration.toml` search/AOI settings + `miami/aux/bbox.kml`
+  - Outputs: `search/products/scenes.csv`, `scene_names.txt`, `summary.json`, `search/raw/results.geojson`, `aoi.wkt`
+- Download SLC (`download_s1_stack.py`)
+  - Inputs: `search/products/scenes.csv`, Earthdata credentials
+  - Outputs: `stack/slc/*.zip`, `stack/download_manifest.json`
+- Download DEM (`download_dem_opentopography.py`)
+  - Inputs: AOI KML + DEM settings + OpenTopography key
+  - Outputs: `stack/dem/*.tif` (+ metadata json)
+- Prepare COMPASS (`prepare_compass_stack.py`)
+  - Inputs: `stack/slc/*.zip`, DEM, stack config, burst DB path
+  - Outputs: `stack/compass/runconfigs/*.yaml`, `run_files/*.sh`, `prepare_summary.json`
+- Run COMPASS (`run_compass_runfiles.py`)
+  - Inputs: runfiles + runconfigs
+  - Outputs: coregistered CSLC HDF5 per burst/date under `stack/compass/<burst_id>/<YYYYMMDD>/*.h5`, logs, `run_state.json`
+- Prepare Dolphin (`prepare_dolphin_workflow.py`)
+  - Inputs: COMPASS CSLC HDF5 outputs + AOI/config
+  - Outputs: `stack/dolphin/inputs/cslc_files.txt`, `stack/dolphin/config/dolphin_config.yaml`, `stack/dolphin/prepare_summary.json`
+- Run Dolphin (`run_dolphin_workflow.py`)
+  - Inputs: Dolphin config YAML + CSLC list
+  - Outputs: displacement workflow products under `stack/dolphin/` (wrapped phase, unwrap, timeseries, velocity)
 
 ## Download Stage
 Why: geocoding/coregistration cannot start until the selected raw SLC ZIPs are local.
@@ -73,7 +102,7 @@ Dry-run (size + free-space check):
 ```bash
 mamba run -n isce3-feb python miami/scripts/download_s1_stack.py \
   --repo-root /home/niels/course/2025-isceplus \
-  --config miami/insar/us_isleofnormandy_s1_asc_t48/config/stack.toml
+  --config miami/insar/us_isleofnormandy_s1_asc_t48/config/processing_configuration.toml
 ```
 
 Actual download:
@@ -81,7 +110,7 @@ Actual download:
 ```bash
 mamba run -n isce3-feb python miami/scripts/download_s1_stack.py \
   --repo-root /home/niels/course/2025-isceplus \
-  --config miami/insar/us_isleofnormandy_s1_asc_t48/config/stack.toml \
+  --config miami/insar/us_isleofnormandy_s1_asc_t48/config/processing_configuration.toml \
   --download
 ```
 
@@ -101,7 +130,7 @@ bash /home/niels/course/2025-isceplus/scripts/check_credentials.sh
 ```bash
 mamba run -n isce3-feb python miami/scripts/download_dem_opentopography.py \
   --repo-root /home/niels/course/2025-isceplus \
-  --config miami/insar/us_isleofnormandy_s1_asc_t48/config/stack.toml
+  --config miami/insar/us_isleofnormandy_s1_asc_t48/config/processing_configuration.toml
 ```
 
 This stack config uses `SRTMGL1_E` and sets `vertical_datum = WGS84_ELLIPSOID`.
@@ -113,7 +142,7 @@ Why: this makes DEM height reference explicit and avoids silent datum mismatch i
 ```bash
 mamba run -n isce3-feb python miami/scripts/prepare_compass_stack.py \
   --repo-root /home/niels/course/2025-isceplus \
-  --config miami/insar/us_isleofnormandy_s1_asc_t48/config/stack.toml
+  --config miami/insar/us_isleofnormandy_s1_asc_t48/config/processing_configuration.toml
 ```
 
 Notes:
@@ -129,7 +158,7 @@ Notes:
 ```bash
 mamba run -n isce3-feb python miami/scripts/run_compass_runfiles.py \
   --repo-root /home/niels/course/2025-isceplus \
-  --config miami/insar/us_isleofnormandy_s1_asc_t48/config/stack.toml
+  --config miami/insar/us_isleofnormandy_s1_asc_t48/config/processing_configuration.toml
 ```
 
 Resume behavior:
@@ -145,7 +174,7 @@ Prepare dry-run (show exact COMPASS command):
 ```bash
 mamba run -n isce3-feb python miami/scripts/prepare_compass_stack.py \
   --repo-root /home/niels/course/2025-isceplus \
-  --config miami/insar/us_isleofnormandy_s1_asc_t48/config/stack.toml \
+  --config miami/insar/us_isleofnormandy_s1_asc_t48/config/processing_configuration.toml \
   --dry-run
 ```
 
@@ -154,7 +183,7 @@ Run-files dry-run (show pending work):
 ```bash
 mamba run -n isce3-feb python miami/scripts/run_compass_runfiles.py \
   --repo-root /home/niels/course/2025-isceplus \
-  --config miami/insar/us_isleofnormandy_s1_asc_t48/config/stack.toml \
+  --config miami/insar/us_isleofnormandy_s1_asc_t48/config/processing_configuration.toml \
   --dry-run
 ```
 
@@ -165,3 +194,70 @@ Why: these two details commonly cause confusion in first stack runs.
 - High-precision target: `Orbit status: precise POEORB files are being used.`
 - If prepare reports `RESORB-only fallback`, rerun later so POEORB can become available in cache.
 - Date overrides (`--start-date`, `--end-date`) are `YYYYMMDD`; `--end-date` is interpreted inclusively by the wrapper.
+
+## Coreg Output Shape
+Why: this avoids confusion about whether COMPASS makes one monolithic stack file.
+
+- COMPASS does not create a single all-dates HDF5 stack.
+- It creates one CSLC HDF5 per acquisition date per burst.
+- Time-series stacking/inversion happens in Dolphin after these CSLC files exist.
+
+## Dolphin Stage (After COMPASS)
+Why: Dolphin is the time-series InSAR stage on top of COMPASS coregistered CSLCs.
+
+Sensible run order from your current state:
+
+1. Dry-run prepare (validate CSLCs + print exact Dolphin command):
+
+```bash
+mamba run -n isce3-feb python miami/scripts/prepare_dolphin_workflow.py \
+  --repo-root /home/niels/course/2025-isceplus \
+  --config miami/insar/us_isleofnormandy_s1_asc_t48/config/processing_configuration.toml \
+  --dry-run
+```
+
+2. Prepare for real (writes CSLC list + Dolphin YAML config):
+
+```bash
+mamba run -n isce3-feb python miami/scripts/prepare_dolphin_workflow.py \
+  --repo-root /home/niels/course/2025-isceplus \
+  --config miami/insar/us_isleofnormandy_s1_asc_t48/config/processing_configuration.toml
+```
+
+3. Optional: inspect/tweak Dolphin config behavior:
+- Edit TOML under `[processing.dolphin]` for common knobs.
+- For low-memory machines, lower `worker_block_shape` and `timeseries_block_shape` (for example `[128, 128]`).
+- Use `[processing.dolphin.option_overrides]` for any Dolphin flag/value.
+- Rerun step 2 after changes to regenerate YAML deterministically.
+
+4. Run Dolphin workflow:
+
+```bash
+mamba run -n isce3-feb python miami/scripts/run_dolphin_workflow.py \
+  --repo-root /home/niels/course/2025-isceplus \
+  --config miami/insar/us_isleofnormandy_s1_asc_t48/config/processing_configuration.toml
+```
+
+5. Optional troubleshooting run (more verbose logs):
+
+```bash
+mamba run -n isce3-feb python miami/scripts/run_dolphin_workflow.py \
+  --repo-root /home/niels/course/2025-isceplus \
+  --config miami/insar/us_isleofnormandy_s1_asc_t48/config/processing_configuration.toml \
+  --debug
+```
+
+Notes:
+- The Dolphin prep script checks CSLC validity by opening each HDF5 and verifying the configured subdataset (default `data/VV`).
+- CSLC discovery uses `processing.dolphin.cslc_glob` (strict by default) and only uses recursive `**/*.h5` fallback if `allow_recursive_cslc_search=true`.
+- By default it fails if valid CSLC count is below `expected_unique_dates` from stack search (use `--allow-partial-cslc` to override).
+- It also writes `stack/dolphin/config/dolphin_config.reference.yaml` (from `dolphin config --print-empty`) so you can inspect the full option space.
+
+How to discover/tune Dolphin options:
+- Quick CLI inventory: `mamba run -n isce3-feb dolphin config --help`
+- Full default template YAML: `mamba run -n isce3-feb dolphin config --print-empty --outfile /tmp/dolphin_empty.yaml`
+- Project-level controls live in `[processing.dolphin]` inside `config/processing_configuration.toml`.
+- Any Dolphin option can be passed via `[processing.dolphin.option_overrides]` (bool/scalar/list).
+- `processing_configuration.toml` now includes a commented advanced catalog of currently unmapped Dolphin options you can enable in-place.
+- For any CLI flag not explicitly mapped by the wrapper, use `processing.dolphin.extra_cli_args`.
+- Overlap guard: wrapper-managed flags must not be duplicated in `option_overrides` or `extra_cli_args`; prepare now fails fast on conflicts.

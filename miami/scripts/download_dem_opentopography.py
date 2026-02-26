@@ -23,7 +23,13 @@ from pathlib import Path
 import requests
 from tqdm import tqdm
 
-from stack_common import buffer_bbox, kml_bbox, read_toml, resolve_path
+from stack_common import (
+    DEFAULT_STACK_CONFIG_REL,
+    buffer_bbox,
+    kml_bbox,
+    read_toml,
+    resolve_path,
+)
 
 OPENTOPO_URL = "https://portal.opentopography.org/API/globaldem"
 
@@ -124,7 +130,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--config",
-        default="miami/insar/us_isleofnormandy_s1_asc_t48/config/stack.toml",
+        default=DEFAULT_STACK_CONFIG_REL,
         help="Path to stack TOML config.",
     )
     parser.add_argument(
@@ -174,7 +180,7 @@ def main() -> int:
     output_value = args.output or dem_cfg.get("file")
     if not output_value:
         print(
-            "No DEM output path configured. Set ancillary.dem.file in stack.toml or pass --output.",
+            "No DEM output path configured. Set ancillary.dem.file in processing_configuration.toml or pass --output.",
             file=sys.stderr,
         )
         return 2

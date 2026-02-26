@@ -3,6 +3,8 @@
 ## Goal
 Take a downloaded Sentinel-1 SLC stack and run the preprocessing stage needed before time-series analysis.
 
+Canonical command reference: `miami/README.md` is the source of truth for runnable commands in this repo.
+
 ## Why This Matters
 Most hard failures happen between download and coregistration (missing scenes, wrong DEM datum, orbit/coverage mismatch), so this stage should be explicit and validated.
 
@@ -17,7 +19,7 @@ Why: this confirms we are using recommended tooling, not reimplementing SAR proc
 ## Required Inputs
 - Downloaded SLC ZIPs in `stack/slc/`
 - Scene manifest from search stage (`search/products/scenes.csv`)
-- DEM config in `stack.toml` under `[ancillary.dem]`
+- DEM config in `processing_configuration.toml` under `[ancillary.dem]`
 - Credentials:
   - `~/.netrc` for Earthdata
   - `~/.topoapi` for OpenTopography
@@ -42,10 +44,10 @@ Why: geometric coregistration depends on DEM and vertical datum consistency.
 ```bash
 mamba run -n isce3-feb python /home/niels/course/2025-isceplus/miami/scripts/download_dem_opentopography.py \
   --repo-root /home/niels/course/2025-isceplus \
-  --config miami/insar/us_isleofnormandy_s1_asc_t48/config/stack.toml
+  --config miami/insar/us_isleofnormandy_s1_asc_t48/config/processing_configuration.toml
 ```
 
-Current recommended config (in `stack.toml`):
+Current recommended config (in `processing_configuration.toml`):
 - `demtype = "SRTMGL1_E"`
 - `vertical_datum = "WGS84_ELLIPSOID"`
 - `require_ellipsoid_heights = true`
@@ -56,7 +58,7 @@ Why: verify command, AOI bbox, scene completeness, and datum checks before proce
 ```bash
 mamba run -n isce3-feb python /home/niels/course/2025-isceplus/miami/scripts/prepare_compass_stack.py \
   --repo-root /home/niels/course/2025-isceplus \
-  --config miami/insar/us_isleofnormandy_s1_asc_t48/config/stack.toml \
+  --config miami/insar/us_isleofnormandy_s1_asc_t48/config/processing_configuration.toml \
   --dry-run
 ```
 
@@ -74,7 +76,7 @@ Then run prepare for real:
 ```bash
 mamba run -n isce3-feb python /home/niels/course/2025-isceplus/miami/scripts/prepare_compass_stack.py \
   --repo-root /home/niels/course/2025-isceplus \
-  --config miami/insar/us_isleofnormandy_s1_asc_t48/config/stack.toml
+  --config miami/insar/us_isleofnormandy_s1_asc_t48/config/processing_configuration.toml
 ```
 
 ## Step 4: Execute COMPASS Run Files
@@ -83,7 +85,7 @@ Why: this runs the actual preprocessing/coregistration jobs.
 ```bash
 mamba run -n isce3-feb python /home/niels/course/2025-isceplus/miami/scripts/run_compass_runfiles.py \
   --repo-root /home/niels/course/2025-isceplus \
-  --config miami/insar/us_isleofnormandy_s1_asc_t48/config/stack.toml
+  --config miami/insar/us_isleofnormandy_s1_asc_t48/config/processing_configuration.toml
 ```
 
 Resume behavior:
@@ -91,6 +93,10 @@ Resume behavior:
 - logs: `logs/compass/`
 - rerun continues from pending jobs by default
 - use `--no-resume` to force rerun all
+
+Expected coreg outputs:
+- one CSLC HDF5 per date per burst under `stack/compass/<burst_id>/<YYYYMMDD>/*.h5`
+- not a single all-dates stack HDF5
 
 ## About `common_bursts_only`
 Why: burst selection strongly affects stack consistency.
@@ -103,6 +109,7 @@ Why: burst selection strongly affects stack consistency.
 Why: Dolphin expects coregistered stack products as input.
 
 After COMPASS runfiles complete cleanly, move to Dolphin pipeline configuration and execution.
+See: `knowledge_library/04_dolphin_timeseries_from_compass_cslc.md`.
 
 ## Quick Troubleshooting
 - `Missing command: s1_geocode_stack.py`:
@@ -110,7 +117,7 @@ After COMPASS runfiles complete cleanly, move to Dolphin pipeline configuration 
 - `Scene completeness check failed`:
   - let downloader finish, then rerun prepare
 - `Vertical datum check failed`:
-  - set correct values in `[ancillary.dem]` in `stack.toml`
+  - set correct values in `[ancillary.dem]` in `processing_configuration.toml`
 - `No single orbit file was found` warning:
   - this can appear before orbit fallback selection completes
   - verify final prepare output shows `Orbit status: precise POEORB files are being used.`

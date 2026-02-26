@@ -1,0 +1,219 @@
+[project]
+name = "us_isleofnormandy_s1_asc_t48"
+site = "miami_isle_of_normandy"
+
+[aoi]
+kml = "miami/aux/bbox.kml"
+
+[search]
+platform = "SENTINEL1"
+processing_level = "SLC"
+beam_mode = "IW"
+flight_direction = "ASCENDING"
+relative_orbit = 48
+start = "2015-09-21T00:00:00Z"
+end = "2022-04-30T23:59:59Z"
+reference_date = "2015-09-21"
+expected_scenes = 20
+expected_unique_dates = 20
+
+[selection]
+mode = "first_n_from_reference"
+max_dates = 20
+require_reference = true
+
+[outputs]
+root = "miami/insar/us_isleofnormandy_s1_asc_t48/search"
+scene_list = "products/scene_names.txt"
+metadata_csv = "products/scenes.csv"
+summary_json = "products/summary.json"
+geojson = "raw/results.geojson"
+wkt = "raw/aoi.wkt"
+
+[storage]
+slc_dir = "miami/insar/us_isleofnormandy_s1_asc_t48/stack/slc"
+download_manifest = "miami/insar/us_isleofnormandy_s1_asc_t48/stack/download_manifest.json"
+
+[ancillary.dem]
+file = "miami/insar/us_isleofnormandy_s1_asc_t48/stack/dem/opentopo_srtm_gl1_ellip.tif"
+demtype = "SRTMGL1_E"
+bbox_buffer_deg = 0.02
+vertical_datum = "WGS84_ELLIPSOID"
+require_ellipsoid_heights = true
+
+[processing.compass]
+work_dir = "miami/insar/us_isleofnormandy_s1_asc_t48/stack/compass"
+orbit_dir = "miami/insar/us_isleofnormandy_s1_asc_t48/stack/orbits"
+burst_db_file = "miami/insar/us_isleofnormandy_s1_asc_t48/stack/compass/opera-burst-bbox-only.sqlite3"
+logs_dir = "miami/insar/us_isleofnormandy_s1_asc_t48/logs/compass"
+common_bursts_only = true
+browse_image = false
+disable_hdf5_file_locking = true
+pol = "co-pol"
+x_spacing_m = 5.0
+y_spacing_m = 10.0
+bbox_buffer_deg = 0.02
+flatten = true
+corrections = true
+
+[processing.dolphin]
+# 0) Paths and reproducibility (resolved first by the prep wrapper).
+work_dir = "miami/insar/us_isleofnormandy_s1_asc_t48/stack/dolphin" # Root folder for Dolphin products.
+config_file = "miami/insar/us_isleofnormandy_s1_asc_t48/stack/dolphin/config/dolphin_config.yaml" # Generated YAML used by `dolphin run`.
+cslc_file_list = "miami/insar/us_isleofnormandy_s1_asc_t48/stack/dolphin/inputs/cslc_files.txt" # Deterministic list of validated CSLC inputs.
+reference_template_file = "miami/insar/us_isleofnormandy_s1_asc_t48/stack/dolphin/config/dolphin_config.reference.yaml" # Full default template from installed Dolphin.
+keep_paths_relative = false # Set true only when you need portable relative paths across machines.
+
+# 1) Input selection / AOI clipping (applied when generating Dolphin config).
+cslc_subdataset = "data/VV" # HDF5 subdataset to process; keep aligned with your CSLC polarization.
+cslc_glob = "t*/20*/t*.h5" # Primary CSLC discovery pattern relative to stack/compass.
+allow_recursive_cslc_search = false # Keep false for strict layout checks; true only for non-standard outputs.
+bbox_buffer_deg = 0.00 # Extra AOI margin in degrees; increase if edge effects clip valid pixels.
+# mask_file = "path/to/water_mask_uint8.tif" # Use a uint8 mask (0 bad, 1 good) to suppress water/low-quality areas.
+
+# 2) Compute resources (controls parallelism and hardware use).
+gpu_enabled = false # Enable only when CUDA stack is stable for your environment.
+threads_per_worker = 1 # CPU threads per worker process; increase on high-core machines.
+n_parallel_bursts = 1 # Parallel burst/chunk jobs in wrapped-phase estimation.
+worker_block_shape = [128, 128] # Memory guard: smaller blocks reduce RAM spikes during chunk processing.
+n_parallel_unwrap_jobs = 1 # Number of interferograms unwrapped in parallel.
+
+# 3) Phase linking + interferogram network design.
+ministack_size =20 # Sequential estimator window size; larger is steadier but heavier.
+max_bandwidth = 3 # Nearest-neighbor interferogram bandwidth; larger adds density and compute.
+phase_linking_use_evd = false # Switch to EVD instead of EMI only for targeted experiments.
+phase_linking_mask_input_ps = false # Mask PS during linking if PS dominate covariance estimates.
+# phase_linking_half_window_x = 14 # Half-window (x) for SHP/covariance estimation; increase for noisier data.
+# phase_linking_half_window_y = 7 # Half-window (y) for SHP/covariance estimation.
+# phase_linking_shp_method = "GLRT" # SHP detector: GLRT (default), KS, RECT, or NONE.
+# phase_linking_shp_alpha = 0.001 # SHP significance; lower values include more neighbors.
+# phase_linking_beta = 0.0 # Correlation regularization; raise slightly if inversion is unstable.
+# phase_linking_baseline_lag = 3 # StBAS lag: only nearest-N links in phase-linking covariance.
+# max_temporal_baseline = 48 # Maximum temporal baseline (days) for IFG network pruning.
+
+# 4) Unwrapping stage.
+run_unwrap = true # Keep true for displacement products; false for wrapped-phase-only tests.
+run_goldstein = false # Enable when wrapped phase is noisy before unwrapping.
+run_interpolation = false # Enable to fill low-correlation gaps before unwrapping.
+zero_where_masked = false # Set true when unwrapper should ignore masked pixels explicitly.
+unwrap_method = "SNAPHU" # One of SNAPHU/ICU/PHASS/SPURT/WHIRLWIND.
+# snaphu_cost = "smooth" # SNAPHU statistical cost mode: smooth or defo.
+# snaphu_init_method = "mcf" # SNAPHU init: mcf (robust) or mst (faster).
+# snaphu_ntiles_x = 1 # SNAPHU tiling in x; increase only for very large rasters.
+# snaphu_ntiles_y = 1 # SNAPHU tiling in y.
+# snaphu_tile_overlap_x = 0 # Tile overlap in x pixels (if tiling is enabled).
+# snaphu_tile_overlap_y = 0 # Tile overlap in y pixels.
+# snaphu_n_parallel_tiles = 1 # Parallel SNAPHU tiles per interferogram.
+
+# 5) Time-series inversion / velocity.
+timeseries_run_inversion = true # Keep true to solve displacement time series from IFGs.
+timeseries_run_velocity = true # Keep true to fit velocity from solved time series.
+timeseries_method = "L1" # L1 is robust to outliers; L2 is faster/smoother.
+timeseries_correlation_threshold = 0.2 # Raise to mask noisier pixels more aggressively.
+timeseries_block_shape = [128, 128] # Memory guard for inversion/velocity blocks.
+# timeseries_num_parallel_blocks = 4 # Parallel block count during inversion/velocity.
+
+# 6) Output grid and visualization products.
+add_overviews = true # Build image pyramids for faster map viewing.
+# output_epsg = 32617 # Force output projection when you do not want auto-selected EPSG.
+# strides_x = 1 # X decimation stride; increase for faster lower-resolution experimentation.
+# strides_y = 1 # Y decimation stride.
+
+# 7) Raw CLI passthrough (last-resort for flags not modeled above).
+# Example:
+# extra_cli_args = [
+#   "--output-options.overview-levels", "2", "4", "8", "16",
+#   "--phase-linking.write-closure-phase",
+# ]
+extra_cli_args = [] # Appended at the end of the generated `dolphin config` command.
+# Do not duplicate wrapper-managed options here; prepare script now fails on overlaps.
+
+# Structured passthrough for any Dolphin config flag.
+# Key format: Dolphin option name without leading `--` (quoted if it contains dots).
+# Value types:
+# - bool: emits --option / --no-option
+# - scalar (str/int/float): emits --option value
+# - list: emits --option v1 v2 ...
+# Do not duplicate wrapper-managed options here; prepare script now fails on overlaps.
+[processing.dolphin.option_overrides]
+# Complete advanced option catalog for unmapped Dolphin flags.
+# Why: every installed Dolphin knob is now configurable here without editing Python.
+# Note: keep wrapper-managed options in [processing.dolphin], not here.
+
+# Input and metadata options.
+# "log-file" = "miami/insar/us_isleofnormandy_s1_asc_t48/stack/dolphin/dolphin.log" # Override Dolphin log output location.
+# "require-cslc-files" = true # Keep true for strict input checks; false only for debugging config generation.
+# "amplitude-dispersion-files" = ["/abs/path/amp_dispersion.tif"] # Reuse precomputed AD rasters.
+# "amplitude-mean-files" = ["/abs/path/amp_mean.tif"] # Reuse precomputed amplitude mean rasters.
+# "layover-shadow-mask-files" = ["/abs/path/layover_shadow_mask.tif"] # Optional layover/shadow mask inputs.
+# "input-options.cslc-date-fmt" = "%Y%m%d" # Date parser format for CSLC filenames.
+# "input-options.wavelength" = 0.05546576 # Force radar wavelength (meters) if sensor autodetection fails.
+
+# Output encoding and packaging options.
+# "output-options.bounds-wkt" = "POLYGON ((-80.16 25.84, -80.12 25.84, -80.12 25.91, -80.16 25.91, -80.16 25.84))" # AOI polygon as WKT (alternative to bounds).
+# "output-options.gtiff-creation-options" = [
+#   "COMPRESS=lzw", "ZLEVEL=4", "BIGTIFF=yes", "TILED=yes", "BLOCKXSIZE=128", "BLOCKYSIZE=128"
+# ] # Tune GeoTIFF size/speed tradeoff.
+# "output-options.overview-levels" = [2, 4, 8, 16, 32, 64] # Pyramid levels for map display.
+# "output-options.extra-reference-date" = "2017-09-08" # Add a second reference epoch for event-reset networks.
+# "output-options.hdf5-creation-options.chunks" = [128, 128] # HDF5 chunking for internal datasets.
+# "output-options.hdf5-creation-options.compression" = "gzip" # HDF5 compression backend.
+# "output-options.hdf5-creation-options.compression-opts" = 4 # HDF5 compression level.
+# "output-options.hdf5-creation-options.shuffle" = true # Shuffle filter before HDF5 compression.
+
+# Persistent scatterer (PS) mask behavior.
+# "ps-options.amp-dispersion-threshold" = 0.25 # PS candidate threshold on amplitude dispersion.
+
+# Phase-linking advanced controls.
+# "phase-linking.max-num-compressed" = 12 # Keep more compressed SLCs for long stacks.
+# "phase-linking.output-reference-idx" = 0 # Reference SLC index after phase linking.
+# "phase-linking.zero-correlation-threshold" = 0.0 # Clamp low correlation entries to zero.
+# "phase-linking.compressed-slc-plan" = "ALWAYS_FIRST" # Compression strategy: ALWAYS_FIRST/FIRST_PER_MINISTACK/LAST_PER_MINISTACK.
+# "phase-linking.write-crlb" = true # Write CRLB diagnostics.
+"phase-linking.write-closure-phase" = true # Enable closure-phase diagnostics during algorithm tuning.
+
+# Interferogram network overrides.
+# "interferogram-network.reference-idx" = 0 # Reference date for single-reference network mode.
+# "interferogram-network.indexes" = [[0, 1], [1, 2], [2, 3]] # Explicit (ref_idx, sec_idx) pairs for manual network design.
+
+# Unwrap preprocess options (used when filtering/interpolation are enabled).
+# "unwrap-options.preprocess-options.alpha" = 0.5 # Goldstein filter exponent.
+# "unwrap-options.preprocess-options.max-radius" = 51 # Interpolation neighbor radius in pixels.
+# "unwrap-options.preprocess-options.interpolation-cor-threshold" = 0.25 # Correlation threshold for interpolation mask.
+# "unwrap-options.preprocess-options.interpolation-similarity-threshold" = 0.3 # Phase-similarity threshold for interpolation mask.
+# "unwrap-options.preprocess-options.zero-correlation-where-interpolating" = false # Zero coherence at interpolated pixels.
+
+# SNAPHU advanced unwrapping behavior.
+# "unwrap-options.snaphu-options.single-tile-reoptimize" = false # Run final single-tile refinement after tiled unwrap.
+
+# TOPHU advanced options (when unwrap_method is TOPHU/PHASS stack path).
+# "unwrap-options.tophu-options.ntiles" = [1, 1] # Tile layout for TOPHU.
+# "unwrap-options.tophu-options.downsample-factor" = [1, 1] # Additional coarse downsampling for TOPHU.
+# "unwrap-options.tophu-options.init-method" = "mcf" # TOPHU initialization: mcf or mst.
+# "unwrap-options.tophu-options.cost" = "smooth" # TOPHU cost model: smooth or defo.
+
+# SPURT advanced options (when unwrap_method is SPURT).
+# "unwrap-options.spurt-options.temporal-coherence-threshold" = 0.7 # Temporal-coherence gate for irregular-grid points.
+# "unwrap-options.spurt-options.similarity-threshold" = 0.5 # Similarity gate for irregular-grid points.
+# "unwrap-options.spurt-options.run-ambiguity-interpolation" = true # Fill masked pixels after SPURT unwrapping.
+# "unwrap-options.spurt-options.general-settings.use-tiles" = true # Enable SPURT spatial tiling.
+# "unwrap-options.spurt-options.tiler-settings.max-tiles" = 64 # Upper bound on number of SPURT tiles.
+# "unwrap-options.spurt-options.tiler-settings.target-points-for-generation" = 120000 # Target points used for tile generation.
+# "unwrap-options.spurt-options.tiler-settings.target-points-per-tile" = 900000 # Density goal per SPURT tile.
+# "unwrap-options.spurt-options.tiler-settings.dilation-factor" = 0.05 # Fractional tile dilation for overlap.
+# "unwrap-options.spurt-options.solver-settings.t-worker-count" = 1 # Temporal-solver workers.
+# "unwrap-options.spurt-options.solver-settings.s-worker-count" = 1 # Spatial-solver workers.
+# "unwrap-options.spurt-options.solver-settings.links-per-batch" = 150000 # Temporal links per parallel batch.
+# "unwrap-options.spurt-options.solver-settings.t-cost-type" = "constant" # Temporal edge-cost model.
+# "unwrap-options.spurt-options.solver-settings.t-cost-scale" = 100.0 # Temporal edge-cost scaling.
+# "unwrap-options.spurt-options.solver-settings.s-cost-type" = "constant" # Spatial edge-cost model.
+# "unwrap-options.spurt-options.solver-settings.s-cost-scale" = 100.0 # Spatial edge-cost scaling.
+# "unwrap-options.spurt-options.solver-settings.num-parallel-tiles" = 1 # Parallel SPURT tiles during solve.
+# "unwrap-options.spurt-options.merger-settings.min-overlap-points" = 25 # Minimum overlap points to merge tiles.
+# "unwrap-options.spurt-options.merger-settings.method" = "dirichlet" # Tile merge method.
+# "unwrap-options.spurt-options.merger-settings.bulk-method" = "L2" # Bulk offset estimator between tiles.
+# "unwrap-options.spurt-options.merger-settings.num-parallel-ifgs" = 3 # IFGs merged per batch.
+
+# Time-series advanced controls.
+# "timeseries-options.reference-point" = [1000, 1000] # Force inversion reference pixel (row, col).
+# "timeseries-options.apply-mask-to-timeseries" = true # Apply input mask to timeseries outputs.

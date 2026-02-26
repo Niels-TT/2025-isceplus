@@ -21,7 +21,7 @@ from pathlib import Path
 
 from tqdm import tqdm
 
-from stack_common import read_toml, resolve_path
+from stack_common import DEFAULT_STACK_CONFIG_REL, read_toml, resolve_path
 
 
 def load_state(path: Path) -> dict:
@@ -104,7 +104,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--config",
-        default="miami/insar/us_isleofnormandy_s1_asc_t48/config/stack.toml",
+        default=DEFAULT_STACK_CONFIG_REL,
         help="Path to stack TOML config.",
     )
     parser.add_argument(

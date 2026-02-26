@@ -16,58 +16,17 @@ import argparse
 import csv
 import json
 import sys
-import tomllib
-import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Iterable
 
 import asf_search as asf
 
-KML_NS = {"kml": "http://www.opengis.net/kml/2.2"}
-
-
-def read_toml(path: Path) -> dict:
-    """Load a TOML file into a dictionary.
-
-    Args:
-        path: TOML file path.
-
-    Returns:
-        Parsed TOML content.
-    """
-    with path.open("rb") as f:
-        return tomllib.load(f)
-
-
-def parse_kml_to_wkt(kml_path: Path) -> str:
-    """Convert a KML AOI polygon to WKT format for ASF queries.
-
-    Args:
-        kml_path: Path to AOI KML file.
-
-    Returns:
-        WKT POLYGON string.
-
-    Raises:
-        ValueError: If polygon coordinates are missing or invalid.
-    """
-    root = ET.parse(kml_path).getroot()
-    coordinates = root.find(".//kml:coordinates", KML_NS)
-    if coordinates is None or not coordinates.text:
-        raise ValueError(f"No polygon coordinates found in KML: {kml_path}")
-
-    points = []
-    for token in coordinates.text.strip().split():
-        lon, lat, *_ = token.split(",")
-        points.append((float(lon), float(lat)))
-
-    if len(points) < 4:
-        raise ValueError(f"Invalid polygon in KML (too few points): {kml_path}")
-
-    if points[0] != points[-1]:
-        points.append(points[0])
-
-    return "POLYGON((" + ", ".join(f"{x} {y}" for x, y in points) + "))"
+from stack_common import (
+    DEFAULT_STACK_CONFIG_REL,
+    parse_kml_to_wkt,
+    read_toml,
+    resolve_path,
+)
 
 
 def asf_enum(enum_obj, value: str, field_name: str):
@@ -211,7 +170,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--config",
-        default="miami/insar/us_isleofnormandy_s1_asc_t48/config/stack.toml",
+        default=DEFAULT_STACK_CONFIG_REL,
         help="Path to stack TOML config (relative to repo root or absolute).",
     )
     parser.add_argument(
@@ -227,10 +186,7 @@ def main() -> int:
     args = parser.parse_args()
 
     repo_root = Path(args.repo_root).resolve()
-    config_path = Path(args.config)
-    if not config_path.is_absolute():
-        config_path = repo_root / config_path
-    config_path = config_path.resolve()
+    config_path = resolve_path(repo_root, args.config)
 
     cfg = read_toml(config_path)
     search_cfg = cfg["search"]
@@ -238,10 +194,7 @@ def main() -> int:
     aoi_cfg = cfg["aoi"]
     out_cfg = cfg["outputs"]
 
-    kml_path = Path(aoi_cfg["kml"])
-    if not kml_path.is_absolute():
-        kml_path = repo_root / kml_path
-    kml_path = kml_path.resolve()
+    kml_path = resolve_path(repo_root, aoi_cfg["kml"])
     wkt = parse_kml_to_wkt(kml_path)
 
     platform = asf_enum(asf.PLATFORM, search_cfg["platform"], "platform")
@@ -276,10 +229,7 @@ def main() -> int:
     )
     scene_names = [item.properties.get("sceneName", "") for item in results]
 
-    out_root = Path(out_cfg["root"])
-    if not out_root.is_absolute():
-        out_root = repo_root / out_root
-    out_root = out_root.resolve()
+    out_root = resolve_path(repo_root, out_cfg["root"])
 
     scene_list_path = out_root / out_cfg["scene_list"]
     scene_csv_path = out_root / out_cfg["metadata_csv"]

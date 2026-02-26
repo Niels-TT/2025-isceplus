@@ -1,7 +1,7 @@
 # us_isleofnormandy_s1_asc_t48
 
 ## Current State
-- Stack config is in `config/stack.toml`
+- Stack config is in `config/processing_configuration.toml`
 - ASF query output is in `search/`
 - `search/products/scene_names.txt` contains 20 S1 IW SLC scenes
 - Selection policy: first 20 dates from reference date (`2015-09-21`)

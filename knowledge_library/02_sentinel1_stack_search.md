@@ -24,7 +24,7 @@ Why: Vertex is the fastest way to explore what exists before hard-coding paramet
 4. Set product type: SLC.
 5. Filter by direction and relative orbit.
 6. Inspect counts and scene spacing.
-7. Copy final constraints into stack config (`stack.toml`).
+7. Copy final constraints into stack config (`processing_configuration.toml`).
 
 Use manual recon when:
 - you do not know orbit direction/track yet
@@ -35,7 +35,7 @@ Use manual recon when:
 Why: Standard structure makes automation and debugging predictable.
 
 - `miami/aux/bbox.kml` (source AOI)
-- `miami/insar/us_isleofnormandy_s1_asc_t48/config/stack.toml`
+- `miami/insar/us_isleofnormandy_s1_asc_t48/config/processing_configuration.toml`
 - `miami/insar/us_isleofnormandy_s1_asc_t48/search/`
   - `products/scene_names.txt`
   - `products/scenes.csv`
@@ -49,11 +49,11 @@ Why: Generate machine-usable scene lists with explicit reproducibility.
 ```bash
 mamba run -n isce3-feb python /home/niels/course/2025-isceplus/miami/scripts/search_s1_stack.py \
   --repo-root /home/niels/course/2025-isceplus \
-  --config miami/insar/us_isleofnormandy_s1_asc_t48/config/stack.toml
+  --config miami/insar/us_isleofnormandy_s1_asc_t48/config/processing_configuration.toml
 ```
 
 What the script does:
-- reads `stack.toml`
+- reads `processing_configuration.toml`
 - converts KML AOI to WKT
 - queries ASF (`asf_search`)
 - writes scene names, CSV metadata, GeoJSON, and summary
@@ -112,7 +112,7 @@ Dry-run:
 ```bash
 mamba run -n isce3-feb python /home/niels/course/2025-isceplus/miami/scripts/download_s1_stack.py \
   --repo-root /home/niels/course/2025-isceplus \
-  --config miami/insar/us_isleofnormandy_s1_asc_t48/config/stack.toml
+  --config miami/insar/us_isleofnormandy_s1_asc_t48/config/processing_configuration.toml
 ```
 
 Execute:
@@ -120,7 +120,7 @@ Execute:
 ```bash
 mamba run -n isce3-feb python /home/niels/course/2025-isceplus/miami/scripts/download_s1_stack.py \
   --repo-root /home/niels/course/2025-isceplus \
-  --config miami/insar/us_isleofnormandy_s1_asc_t48/config/stack.toml \
+  --config miami/insar/us_isleofnormandy_s1_asc_t48/config/processing_configuration.toml \
   --download
 ```
 
