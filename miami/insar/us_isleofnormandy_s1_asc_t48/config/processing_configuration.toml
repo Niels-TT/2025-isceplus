@@ -73,14 +73,14 @@ bbox_buffer_deg = 0.00 # Extra AOI margin in degrees; increase if edge effects c
 
 # 2) Compute resources (controls parallelism and hardware use).
 gpu_enabled = false # Enable only when CUDA stack is stable for your environment.
-threads_per_worker = 1 # CPU threads per worker process; increase on high-core machines.
-n_parallel_bursts = 1 # Parallel burst/chunk jobs in wrapped-phase estimation.
+threads_per_worker = 2 # 10-core profile: 2 threads/worker keeps CPU busy without over-committing RAM.
+n_parallel_bursts = 3 # 10-core profile: phase-linking chunks in parallel (effective CPU use with 2 threads/worker).
 worker_block_shape = [128, 128] # Memory guard: smaller blocks reduce RAM spikes during chunk processing.
-n_parallel_unwrap_jobs = 1 # Number of interferograms unwrapped in parallel.
+n_parallel_unwrap_jobs = 2 # 10-core profile: unwrap two IFGs in parallel while staying memory-safe.
 
 # 3) Phase linking + interferogram network design.
 ministack_size =20 # Sequential estimator window size; larger is steadier but heavier.
-max_bandwidth = 3 # Nearest-neighbor interferogram bandwidth; larger adds density and compute.
+max_bandwidth = 7 # Nearest-neighbor interferogram bandwidth; larger adds density and compute.
 phase_linking_use_evd = false # Switch to EVD instead of EMI only for targeted experiments.
 phase_linking_mask_input_ps = false # Mask PS during linking if PS dominate covariance estimates.
 # phase_linking_half_window_x = 14 # Half-window (x) for SHP/covariance estimation; increase for noisier data.
@@ -111,7 +111,7 @@ timeseries_run_velocity = true # Keep true to fit velocity from solved time seri
 timeseries_method = "L1" # L1 is robust to outliers; L2 is faster/smoother.
 timeseries_correlation_threshold = 0.2 # Raise to mask noisier pixels more aggressively.
 timeseries_block_shape = [128, 128] # Memory guard for inversion/velocity blocks.
-# timeseries_num_parallel_blocks = 4 # Parallel block count during inversion/velocity.
+timeseries_num_parallel_blocks = 3 # 10-core profile: parallel inversion blocks without exceeding 28 GB RAM.
 
 # 6) Output grid and visualization products.
 add_overviews = true # Build image pyramids for faster map viewing.
