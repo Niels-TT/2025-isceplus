@@ -12,6 +12,7 @@ Why:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import subprocess
@@ -47,7 +48,25 @@ def save_state(path: Path, state: dict) -> None:
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     state["updated_utc"] = datetime.now(timezone.utc).isoformat()
-    path.write_text(json.dumps(state, indent=2), encoding="utf-8")
+    tmp_path = path.with_suffix(path.suffix + ".tmp")
+    tmp_path.write_text(json.dumps(state, indent=2), encoding="utf-8")
+    os.replace(tmp_path, path)
+
+
+def runfile_sha256(path: Path) -> str:
+    """Compute SHA-256 fingerprint of a runfile for resume safety.
+
+    Args:
+        path: Runfile path.
+
+    Returns:
+        Hex SHA-256 digest string.
+    """
+    digest = hashlib.sha256()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def run_one(runfile: Path, logfile: Path, disable_hdf5_file_locking: bool) -> int:
@@ -174,14 +193,22 @@ def main() -> int:
     state = load_state(state_path)
     state_runs: dict = state.setdefault("runs", {})
     resume = not args.no_resume
-    pending: list[Path] = []
+    pending: list[tuple[Path, str]] = []
     skipped_completed = 0
+    rerun_due_to_changed_runfile = 0
     for rf in runfiles:
+        rf_hash = runfile_sha256(rf)
         prev = state_runs.get(rf.name, {})
-        if resume and prev.get("status") == "completed":
+        if (
+            resume
+            and prev.get("status") == "completed"
+            and prev.get("runfile_sha256") == rf_hash
+        ):
             skipped_completed += 1
             continue
-        pending.append(rf)
+        if resume and prev.get("status") == "completed":
+            rerun_due_to_changed_runfile += 1
+        pending.append((rf, rf_hash))
 
     if args.max_runfiles > 0:
         pending = pending[: args.max_runfiles]
@@ -191,6 +218,7 @@ def main() -> int:
     print(f"Run files total: {len(runfiles)}")
     print(f"Resume mode: {resume}")
     print(f"Already completed (skipped): {skipped_completed}")
+    print(f"Completed but changed runfile (will rerun): {rerun_due_to_changed_runfile}")
     print(f"Pending to run now: {len(pending)}")
     print(f"Logs dir: {logs_dir}")
     print(f"State file: {state_path}")
@@ -206,7 +234,7 @@ def main() -> int:
 
     failures = 0
     with tqdm(total=len(pending), desc="COMPASS runfiles", unit="run", dynamic_ncols=True) as bar:
-        for rf in pending:
+        for rf, rf_hash in pending:
             tqdm.write(f"Running: {rf.name}")
             started = datetime.now(timezone.utc).isoformat()
             log_path = logs_dir / f"{rf.stem}.log"
@@ -223,6 +251,7 @@ def main() -> int:
                 "log_file": str(log_path),
                 "started_utc": started,
                 "finished_utc": finished,
+                "runfile_sha256": rf_hash,
             }
             save_state(state_path, state)
             bar.update(1)

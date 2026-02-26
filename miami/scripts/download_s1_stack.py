@@ -17,8 +17,10 @@ import argparse
 import csv
 import json
 import netrc
+import os
 import shutil
 import sys
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -170,7 +172,9 @@ def save_manifest(path: Path, manifest: dict) -> None:
         manifest: Manifest dictionary.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    tmp_path = path.with_suffix(path.suffix + ".tmp")
+    tmp_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    os.replace(tmp_path, path)
 
 
 def update_manifest(manifest: dict, item: DownloadItem, status: str, message: str = "") -> None:
@@ -219,6 +223,7 @@ def download_url_with_progress(
     stack_bytes_bar: tqdm | None,
     scene_index: int,
     scene_total: int,
+    request_timeout_seconds: int,
     position: int = 2,
 ) -> None:
     """Download one scene URL to disk and update progress bars.
@@ -229,6 +234,7 @@ def download_url_with_progress(
         stack_bytes_bar: Shared cumulative bytes progress bar.
         scene_index: 1-based scene position in current run.
         scene_total: Total pending scenes in current run.
+        request_timeout_seconds: HTTP timeout for request operations.
         position: TQDM display row index for per-file bar.
 
     Raises:
@@ -238,6 +244,7 @@ def download_url_with_progress(
         item.url,
         stream=True,
         hooks={"response": strip_auth_if_aws},
+        timeout=request_timeout_seconds,
     )
     try:
         response.raise_for_status()
@@ -341,6 +348,24 @@ def main() -> int:
         action="store_true",
         help="Ignore space guard checks and proceed.",
     )
+    parser.add_argument(
+        "--request-timeout-seconds",
+        type=int,
+        default=120,
+        help="HTTP request timeout in seconds for ASF downloads.",
+    )
+    parser.add_argument(
+        "--max-retries",
+        type=int,
+        default=3,
+        help="Number of retry attempts per scene after an initial failure.",
+    )
+    parser.add_argument(
+        "--retry-backoff-seconds",
+        type=float,
+        default=5.0,
+        help="Base backoff delay (seconds); retries use exponential backoff.",
+    )
     args = parser.parse_args()
 
     repo_root = Path(args.repo_root).resolve()
@@ -403,6 +428,16 @@ def main() -> int:
         )
         return 3
 
+    if args.request_timeout_seconds <= 0:
+        print("--request-timeout-seconds must be > 0.", file=sys.stderr)
+        return 2
+    if args.max_retries < 0:
+        print("--max-retries must be >= 0.", file=sys.stderr)
+        return 2
+    if args.retry_backoff_seconds < 0:
+        print("--retry-backoff-seconds must be >= 0.", file=sys.stderr)
+        return 2
+
     username, password = read_earthdata_creds()
     session = asf.ASFSession().auth_with_creds(username, password)
     manifest = load_manifest(manifest_path)
@@ -439,21 +474,38 @@ def main() -> int:
                     item.dest_path.unlink()
 
             try:
-                download_url_with_progress(
-                    item=item,
-                    session=session,
-                    stack_bytes_bar=stack_bytes_bar,
-                    scene_index=idx,
-                    scene_total=len(pending),
-                    position=2,
-                )
-
-                if item.expected_bytes is not None:
-                    got = item.dest_path.stat().st_size if item.dest_path.exists() else 0
-                    if got != item.expected_bytes:
-                        raise RuntimeError(
-                            f"Size mismatch for {item.filename}: expected {item.expected_bytes}, got {got}"
+                total_attempts = args.max_retries + 1
+                for attempt in range(1, total_attempts + 1):
+                    try:
+                        download_url_with_progress(
+                            item=item,
+                            session=session,
+                            stack_bytes_bar=stack_bytes_bar,
+                            scene_index=idx,
+                            scene_total=len(pending),
+                            request_timeout_seconds=args.request_timeout_seconds,
+                            position=2,
                         )
+
+                        if item.expected_bytes is not None:
+                            got = item.dest_path.stat().st_size if item.dest_path.exists() else 0
+                            if got != item.expected_bytes:
+                                raise RuntimeError(
+                                    f"Size mismatch for {item.filename}: expected {item.expected_bytes}, got {got}"
+                                )
+                        break
+                    except Exception:  # noqa: BLE001
+                        if attempt >= total_attempts:
+                            raise
+                        wait_seconds = args.retry_backoff_seconds * (2 ** (attempt - 1))
+                        tqdm.write(
+                            "Retrying "
+                            f"{item.scene_name} "
+                            f"(attempt {attempt + 1}/{total_attempts}) "
+                            f"after {wait_seconds:.1f}s..."
+                        )
+                        if wait_seconds > 0:
+                            time.sleep(wait_seconds)
 
                 update_manifest(manifest, item, status="downloaded")
                 save_manifest(manifest_path, manifest)

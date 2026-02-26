@@ -169,7 +169,7 @@ extra_cli_args = [] # Appended at the end of the generated `dolphin config` comm
 # "phase-linking.output-reference-idx" = 0 # Reference SLC index after phase linking.
 # "phase-linking.zero-correlation-threshold" = 0.0 # Clamp low correlation entries to zero.
 # "phase-linking.compressed-slc-plan" = "ALWAYS_FIRST" # Compression strategy: ALWAYS_FIRST/FIRST_PER_MINISTACK/LAST_PER_MINISTACK.
-# "phase-linking.write-crlb" = true # Write CRLB diagnostics.
+"phase-linking.write-crlb" = false # Workaround for CRLB repack dtype bug (KeyError: 15) in current env.
 "phase-linking.write-closure-phase" = true # Enable closure-phase diagnostics during algorithm tuning.
 
 # Interferogram network overrides.
@@ -217,3 +217,30 @@ extra_cli_args = [] # Appended at the end of the generated `dolphin config` comm
 # Time-series advanced controls.
 # "timeseries-options.reference-point" = [1000, 1000] # Force inversion reference pixel (row, col).
 # "timeseries-options.apply-mask-to-timeseries" = true # Apply input mask to timeseries outputs.
+
+[processing.dolphin.point_exports]
+# Operational point exports (auto-run after successful dolphin run).
+enabled = true # Master switch: run CSV/KMZ point export stage automatically.
+csv_enabled = true # Write tabular point output for downstream operations/BI.
+kmz_enabled = true # Write Google Earth Pro point layer (3D placemarks).
+
+# Inputs (leave blank to auto-discover from Dolphin outputs).
+velocity_file = "miami/insar/us_isleofnormandy_s1_asc_t48/stack/dolphin/timeseries/velocity.tif" # Source velocity raster (m/yr).
+coherence_file = "" # Optional temporal coherence raster; blank = auto-pick latest.
+ps_mask_file = "" # Optional PS mask raster; blank = auto-pick t*/PS/ps_pixels.tif.
+
+# Selection logic.
+min_temporal_coherence = 0.6 # Keep only points above this coherence threshold.
+use_ps_mask = false # Set true for PS-only export; false keeps valid PS/DS raster points.
+stride = 4 # Spatial decimation stride before export to control output volume.
+max_points = 80000 # Hard cap for export size (deterministic down-sampling if exceeded).
+
+# Outputs.
+output_dir = "miami/insar/us_isleofnormandy_s1_asc_t48/stack/dolphin/exports" # Folder for CSV/KMZ outputs.
+csv_file = "miami/insar/us_isleofnormandy_s1_asc_t48/stack/dolphin/exports/velocity_points.csv" # Point table output.
+kmz_file = "miami/insar/us_isleofnormandy_s1_asc_t48/stack/dolphin/exports/velocity_points.kmz" # Google Earth output.
+
+# KMZ styling / 3D behavior.
+name_prefix = "miami_dolphin" # Placemark name prefix.
+altitude_scale_m_per_mm_per_year = 3.0 # 3D height scale in meters per mm/yr (relativeToGround).
+color_clip_abs_mm_per_year = 30.0 # Velocity color scale clip (+/- mm/yr) for consistent legend behavior.

@@ -1,23 +1,76 @@
 # us_isleofnormandy_s1_asc_t48
 
-## Current State
-- Stack config is in `config/processing_configuration.toml`
-- ASF query output is in `search/`
-- `search/products/scene_names.txt` contains 20 S1 IW SLC scenes
-- Selection policy: first 20 dates from reference date (`2015-09-21`)
+Project-specific stack workspace for the Miami AOI.
+
+## Prerequisites
+Why: scripts are configured for WSL2/Linux + conda environment execution.
+
+- Run from repo root in WSL2/Linux.
+- Activate environment:
+
+```bash
+conda activate isce3-feb
+```
+
+- Use `python ...` from that env (or `mamba run -n isce3-feb python ...`), not `/bin/python3`.
+
+## Current Stack Definition
+- Config file: `config/processing_configuration.toml`
+- AOI source: `miami/aux/bbox.kml`
+- Search outputs: `search/`
+- Selection policy: first 20 dates from reference `2015-09-21`
 - Selected span: `2015-09-21` to `2017-03-26`
-- Selected source volume: about `92.36 GB` (decimal)
+- Approx input volume: `92.36 GB` (20 Sentinel-1 IW SLC scenes)
 
-## Post-Download Plan
-1. Download DEM to `stack/dem/` (`download_dem_opentopography.py`).
-2. Prepare COMPASS run files (`prepare_compass_stack.py`).
-3. Run generated run files (`run_compass_runfiles.py`).
-4. Use resulting coregistered outputs for Dolphin processing.
+## Run Order
+Why: each stage produces required inputs for the next stage.
 
-## Notes
-- Keep processing logs in `logs/`
-- Use `scratch/` for temporary intermediates that can be regenerated
-- Use `stack/slc/` for raw SAFE ZIP storage
-- Use `stack/orbits/` for orbit cache (auto-filled by COMPASS/S1Reader)
-- Use `stack/compass/` for generated runconfigs/runfiles/state
-- `stack/download_manifest.json` records per-scene download status
+From repo root (`/home/niels/insar/git/2025-isceplus`):
+
+1. Download DEM:
+
+```bash
+mamba run -n isce3-feb python miami/scripts/download_dem_opentopography.py \
+  --repo-root . \
+  --config miami/insar/us_isleofnormandy_s1_asc_t48/config/processing_configuration.toml
+```
+
+2. Prepare COMPASS:
+
+```bash
+mamba run -n isce3-feb python miami/scripts/prepare_compass_stack.py \
+  --repo-root . \
+  --config miami/insar/us_isleofnormandy_s1_asc_t48/config/processing_configuration.toml
+```
+
+3. Run COMPASS coregistration:
+
+```bash
+mamba run -n isce3-feb python miami/scripts/run_compass_runfiles.py \
+  --repo-root . \
+  --config miami/insar/us_isleofnormandy_s1_asc_t48/config/processing_configuration.toml
+```
+
+4. Prepare Dolphin:
+
+```bash
+mamba run -n isce3-feb python miami/scripts/prepare_dolphin_workflow.py \
+  --repo-root . \
+  --config miami/insar/us_isleofnormandy_s1_asc_t48/config/processing_configuration.toml
+```
+
+5. Run Dolphin (+ optional point export if enabled in TOML):
+
+```bash
+mamba run -n isce3-feb python miami/scripts/run_dolphin_workflow.py \
+  --repo-root . \
+  --config miami/insar/us_isleofnormandy_s1_asc_t48/config/processing_configuration.toml
+```
+
+## Key Folders
+- `stack/slc/`: raw SLC ZIP files
+- `stack/dem/`: DEM and metadata
+- `stack/orbits/`: orbit cache (auto-managed by COMPASS/S1Reader)
+- `stack/compass/`: runconfigs, runfiles, CSLC outputs, run state
+- `stack/dolphin/`: Dolphin configs and time-series outputs
+- `logs/`: execution logs
