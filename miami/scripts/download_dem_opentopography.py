@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+"""Download an AOI DEM from OpenTopography using stack configuration."""
+
 from __future__ import annotations
 
 import argparse
@@ -17,6 +19,14 @@ OPENTOPO_URL = "https://portal.opentopography.org/API/globaldem"
 
 
 def read_topoapi_key() -> str:
+    """Read OpenTopography API key from `~/.topoapi`.
+
+    Returns:
+        API key string.
+
+    Raises:
+        RuntimeError: If key file is missing or empty.
+    """
     key_path = Path.home() / ".topoapi"
     if not key_path.exists():
         raise RuntimeError(
@@ -29,6 +39,20 @@ def read_topoapi_key() -> str:
 
 
 def stream_download(url: str, params: dict[str, str], out_path: Path, timeout_s: int) -> int:
+    """Stream a file download to disk with progress feedback.
+
+    Args:
+        url: Source URL.
+        params: Query parameters for request.
+        out_path: Destination file path.
+        timeout_s: Request timeout in seconds.
+
+    Returns:
+        Number of bytes written to output file.
+
+    Raises:
+        RuntimeError: If HTTP request fails.
+    """
     out_path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = out_path.with_suffix(out_path.suffix + ".part")
     if tmp_path.exists():
@@ -71,6 +95,11 @@ def stream_download(url: str, params: dict[str, str], out_path: Path, timeout_s:
 
 
 def main() -> int:
+    """Parse CLI args and download DEM plus request metadata.
+
+    Returns:
+        Exit code (0 for success).
+    """
     parser = argparse.ArgumentParser(
         description="Download a DEM from OpenTopography for the stack AOI."
     )

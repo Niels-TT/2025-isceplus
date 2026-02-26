@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+"""Shared helpers for stack search, download, and preprocessing scripts."""
+
 from __future__ import annotations
 
 import csv
@@ -12,16 +14,44 @@ KML_NS = {"kml": "http://www.opengis.net/kml/2.2"}
 
 
 def read_toml(path: Path) -> dict:
+    """Load a TOML file into a dictionary.
+
+    Args:
+        path: Path to the TOML file.
+
+    Returns:
+        Parsed TOML content.
+    """
     with path.open("rb") as f:
         return tomllib.load(f)
 
 
 def resolve_path(repo_root: Path, path_value: str) -> Path:
+    """Resolve a config path relative to repository root when needed.
+
+    Args:
+        repo_root: Repository root directory.
+        path_value: Absolute or relative path string from config/CLI.
+
+    Returns:
+        Absolute resolved path.
+    """
     p = Path(path_value)
     return p if p.is_absolute() else (repo_root / p).resolve()
 
 
 def parse_kml_points(kml_path: Path) -> list[tuple[float, float]]:
+    """Parse lon/lat polygon points from a KML coordinate element.
+
+    Args:
+        kml_path: Path to KML file containing polygon coordinates.
+
+    Returns:
+        List of (lon, lat) tuples.
+
+    Raises:
+        ValueError: If no polygon coordinates exist or polygon is invalid.
+    """
     root = ET.parse(kml_path).getroot()
     coordinates = root.find(".//kml:coordinates", KML_NS)
     if coordinates is None or not coordinates.text:
@@ -37,6 +67,14 @@ def parse_kml_points(kml_path: Path) -> list[tuple[float, float]]:
 
 
 def parse_kml_to_wkt(kml_path: Path) -> str:
+    """Convert a KML polygon to WKT POLYGON text.
+
+    Args:
+        kml_path: Path to KML file.
+
+    Returns:
+        WKT polygon string.
+    """
     points = parse_kml_points(kml_path)
     if points[0] != points[-1]:
         points = [*points, points[0]]
@@ -44,6 +82,14 @@ def parse_kml_to_wkt(kml_path: Path) -> str:
 
 
 def kml_bbox(kml_path: Path) -> tuple[float, float, float, float]:
+    """Compute bounding box from KML polygon coordinates.
+
+    Args:
+        kml_path: Path to KML file.
+
+    Returns:
+        Bounding box as (xmin, ymin, xmax, ymax).
+    """
     points = parse_kml_points(kml_path)
     xs = [p[0] for p in points]
     ys = [p[1] for p in points]
@@ -53,6 +99,15 @@ def kml_bbox(kml_path: Path) -> tuple[float, float, float, float]:
 def buffer_bbox(
     bbox: tuple[float, float, float, float], buffer_deg: float
 ) -> tuple[float, float, float, float]:
+    """Expand a bounding box by degrees and clamp to geographic limits.
+
+    Args:
+        bbox: Bounding box as (xmin, ymin, xmax, ymax).
+        buffer_deg: Buffer size in degrees.
+
+    Returns:
+        Buffered and clamped bounding box.
+    """
     xmin, ymin, xmax, ymax = bbox
     return (
         max(-180.0, xmin - buffer_deg),
@@ -63,11 +118,27 @@ def buffer_bbox(
 
 
 def read_scene_rows(scene_csv: Path) -> list[dict[str, str]]:
+    """Load scene metadata rows from CSV.
+
+    Args:
+        scene_csv: Path to scenes CSV file.
+
+    Returns:
+        List of CSV rows as dictionaries.
+    """
     with scene_csv.open(newline="", encoding="utf-8") as f:
         return list(csv.DictReader(f))
 
 
 def iter_scene_filenames(rows: Iterable[dict[str, str]]) -> Iterable[tuple[str, str]]:
+    """Yield scene name and output ZIP filename pairs from metadata rows.
+
+    Args:
+        rows: Iterable of scene metadata rows.
+
+    Yields:
+        Tuples of (scene_name, filename).
+    """
     for row in rows:
         scene_name = row.get("sceneName", "").strip()
         url = row.get("url", "").strip()
@@ -78,5 +149,13 @@ def iter_scene_filenames(rows: Iterable[dict[str, str]]) -> Iterable[tuple[str, 
 
 
 def iso_to_yyyymmdd(timestamp: str) -> str:
+    """Convert ASF-like ISO timestamp to YYYYMMDD.
+
+    Args:
+        timestamp: Timestamp string, e.g. 2015-09-21T23:27:37.000Z.
+
+    Returns:
+        Date string formatted as YYYYMMDD.
+    """
     # Expected ASF timestamp format example: 2015-09-21T23:27:37.000Z
     return timestamp[:10].replace("-", "")

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+"""Download selected Sentinel-1 scenes from ASF with safety checks and progress bars."""
+
 from __future__ import annotations
 
 import argparse
@@ -19,6 +21,8 @@ from tqdm import tqdm
 
 @dataclass
 class DownloadItem:
+    """Represents one scene download target and its local status."""
+
     scene_name: str
     url: str
     expected_bytes: int | None
@@ -29,9 +33,12 @@ class DownloadItem:
 
 
 def strip_auth_if_aws(response, *args, **kwargs):
-    """
-    ASF redirect helper:
-    strip auth headers on redirects to AWS-backed URLs to avoid auth header conflicts.
+    """Remove auth headers on redirects to AWS URLs.
+
+    Args:
+        response: HTTP response object from ASF session.
+        *args: Unused response hook positional args.
+        **kwargs: Unused response hook keyword args.
     """
     if (
         300 <= response.status_code <= 399
@@ -44,16 +51,41 @@ def strip_auth_if_aws(response, *args, **kwargs):
 
 
 def read_toml(path: Path) -> dict:
+    """Load a TOML file into a dictionary.
+
+    Args:
+        path: TOML file path.
+
+    Returns:
+        Parsed TOML content.
+    """
     with path.open("rb") as f:
         return tomllib.load(f)
 
 
 def resolve_path(repo_root: Path, path_value: str) -> Path:
+    """Resolve an absolute or repo-relative path.
+
+    Args:
+        repo_root: Repository root directory.
+        path_value: Path string from config or CLI.
+
+    Returns:
+        Absolute resolved path.
+    """
     p = Path(path_value)
     return p if p.is_absolute() else (repo_root / p).resolve()
 
 
 def read_earthdata_creds() -> tuple[str, str]:
+    """Read Earthdata credentials from `~/.netrc`.
+
+    Returns:
+        Tuple of (username, password).
+
+    Raises:
+        RuntimeError: If valid Earthdata credentials are not found.
+    """
     machine_candidates = [
         "urs.earthdata.nasa.gov",
         "urs.earthdata.nasa.gov:443",
@@ -76,6 +108,18 @@ def read_earthdata_creds() -> tuple[str, str]:
 
 
 def parse_csv_items(scene_csv: Path, slc_dir: Path) -> list[DownloadItem]:
+    """Build download items from scene metadata CSV and local file status.
+
+    Args:
+        scene_csv: Path to scenes CSV file.
+        slc_dir: Directory where scene ZIP files are stored.
+
+    Returns:
+        List of download items with status fields populated.
+
+    Raises:
+        ValueError: If a scene row has no URL.
+    """
     items: list[DownloadItem] = []
 
     with scene_csv.open(newline="", encoding="utf-8") as f:
@@ -121,17 +165,39 @@ def parse_csv_items(scene_csv: Path, slc_dir: Path) -> list[DownloadItem]:
 
 
 def load_manifest(path: Path) -> dict:
+    """Load download manifest JSON.
+
+    Args:
+        path: Manifest file path.
+
+    Returns:
+        Existing manifest content or default empty manifest.
+    """
     if not path.exists():
         return {"downloads": {}}
     return json.loads(path.read_text(encoding="utf-8"))
 
 
 def save_manifest(path: Path, manifest: dict) -> None:
+    """Write download manifest JSON to disk.
+
+    Args:
+        path: Manifest file path.
+        manifest: Manifest dictionary.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
 
 def update_manifest(manifest: dict, item: DownloadItem, status: str, message: str = "") -> None:
+    """Update one scene entry in manifest with latest status.
+
+    Args:
+        manifest: Manifest dictionary to mutate.
+        item: Scene download item.
+        status: Status label to store.
+        message: Optional status message or error text.
+    """
     now = datetime.now(timezone.utc).isoformat()
     manifest["downloads"][item.scene_name] = {
         "scene_name": item.scene_name,
@@ -146,6 +212,15 @@ def update_manifest(manifest: dict, item: DownloadItem, status: str, message: st
 
 
 def short_scene_name(scene_name: str, max_len: int = 44) -> str:
+    """Shorten a long scene name for progress bar display.
+
+    Args:
+        scene_name: Full scene name string.
+        max_len: Maximum output length.
+
+    Returns:
+        Scene label truncated with an ellipsis when needed.
+    """
     if len(scene_name) <= max_len:
         return scene_name
     keep = max_len - 3
@@ -162,6 +237,19 @@ def download_url_with_progress(
     scene_total: int,
     position: int = 2,
 ) -> None:
+    """Download one scene URL to disk and update progress bars.
+
+    Args:
+        item: Scene metadata and output path.
+        session: Authenticated ASF session.
+        stack_bytes_bar: Shared cumulative bytes progress bar.
+        scene_index: 1-based scene position in current run.
+        scene_total: Total pending scenes in current run.
+        position: TQDM display row index for per-file bar.
+
+    Raises:
+        RuntimeError: If HTTP request fails.
+    """
     response = session.get(
         item.url,
         stream=True,
@@ -210,6 +298,11 @@ def download_url_with_progress(
 
 
 def main() -> int:
+    """Parse CLI args and run dry-run planning or actual downloads.
+
+    Returns:
+        Exit code (0 for success).
+    """
     parser = argparse.ArgumentParser(
         description=(
             "Download selected Sentinel-1 SLC scenes listed in stack search outputs. "

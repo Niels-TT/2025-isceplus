@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+"""Prepare deterministic COMPASS stack run files from local stack inputs."""
+
 from __future__ import annotations
 
 import argparse
@@ -21,15 +23,41 @@ from stack_common import (
 
 
 def command_exists(cmd: str) -> bool:
+    """Check whether a command is available on PATH.
+
+    Args:
+        cmd: Command name.
+
+    Returns:
+        True when command is found, otherwise False.
+    """
     return shutil.which(cmd) is not None
 
 
 def bool_cfg(cfg: dict, key: str, default: bool) -> bool:
+    """Read a boolean-like config value with a default.
+
+    Args:
+        cfg: Configuration dictionary.
+        key: Key to read.
+        default: Fallback value when key is missing.
+
+    Returns:
+        Boolean interpretation of config value.
+    """
     value = cfg.get(key, default)
     return bool(value)
 
 
 def row_filename(row: dict[str, str]) -> str:
+    """Resolve the local ZIP filename for a scene metadata row.
+
+    Args:
+        row: Scene metadata row from `scenes.csv`.
+
+    Returns:
+        ZIP filename inferred from URL or scene name.
+    """
     scene_name = row.get("sceneName", "").strip()
     url = row.get("url", "").strip()
     filename = Path(urlparse(url).path).name
@@ -41,6 +69,17 @@ def row_filename(row: dict[str, str]) -> str:
 def find_scene_issues(
     scene_rows: list[dict[str, str]], slc_dir: Path
 ) -> tuple[list[str], list[tuple[str, int, int]]]:
+    """Find missing scenes and byte-size mismatches in local SLC storage.
+
+    Args:
+        scene_rows: Rows loaded from scene metadata CSV.
+        slc_dir: Directory containing downloaded SLC ZIP files.
+
+    Returns:
+        Tuple of:
+        - list of missing scene labels
+        - list of (scene_label, expected_bytes, got_bytes) mismatches
+    """
     missing: list[str] = []
     size_mismatch: list[tuple[str, int, int]] = []
 
@@ -65,6 +104,14 @@ def find_scene_issues(
 
 
 def validate_vertical_datum(dem_cfg: dict) -> tuple[bool, str, bool]:
+    """Validate DEM vertical datum policy from configuration.
+
+    Args:
+        dem_cfg: DEM config dictionary from stack TOML.
+
+    Returns:
+        Tuple of (is_valid, vertical_datum, require_ellipsoid_heights).
+    """
     vertical_datum = str(dem_cfg.get("vertical_datum", "")).strip().upper()
     require_ellipsoid = bool_cfg(dem_cfg, "require_ellipsoid_heights", True)
     if not vertical_datum:
@@ -75,6 +122,11 @@ def validate_vertical_datum(dem_cfg: dict) -> tuple[bool, str, bool]:
 
 
 def main() -> int:
+    """Parse CLI args, validate inputs, and generate COMPASS run files.
+
+    Returns:
+        Exit code (0 for success).
+    """
     parser = argparse.ArgumentParser(
         description=(
             "Prepare COMPASS run files for stack coregistration via s1_geocode_stack.py. "

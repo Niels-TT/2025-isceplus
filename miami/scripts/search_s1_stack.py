@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+"""Search Sentinel-1 scenes with ASF and write reproducible stack manifests."""
+
 from __future__ import annotations
 
 import argparse
@@ -16,11 +18,30 @@ KML_NS = {"kml": "http://www.opengis.net/kml/2.2"}
 
 
 def read_toml(path: Path) -> dict:
+    """Load a TOML file into a dictionary.
+
+    Args:
+        path: TOML file path.
+
+    Returns:
+        Parsed TOML content.
+    """
     with path.open("rb") as f:
         return tomllib.load(f)
 
 
 def parse_kml_to_wkt(kml_path: Path) -> str:
+    """Convert a KML AOI polygon to WKT format for ASF queries.
+
+    Args:
+        kml_path: Path to AOI KML file.
+
+    Returns:
+        WKT POLYGON string.
+
+    Raises:
+        ValueError: If polygon coordinates are missing or invalid.
+    """
     root = ET.parse(kml_path).getroot()
     coordinates = root.find(".//kml:coordinates", KML_NS)
     if coordinates is None or not coordinates.text:
@@ -41,6 +62,19 @@ def parse_kml_to_wkt(kml_path: Path) -> str:
 
 
 def asf_enum(enum_obj, value: str, field_name: str):
+    """Resolve string enum values against `asf_search` enums.
+
+    Args:
+        enum_obj: Enum container from `asf_search`.
+        value: Enum name to resolve.
+        field_name: Field label used in error messages.
+
+    Returns:
+        Enum value object.
+
+    Raises:
+        ValueError: If enum value name is invalid.
+    """
     try:
         return getattr(enum_obj, value)
     except AttributeError as exc:
@@ -48,6 +82,12 @@ def asf_enum(enum_obj, value: str, field_name: str):
 
 
 def write_scene_csv(path: Path, results: Iterable) -> None:
+    """Write selected ASF scene properties to CSV.
+
+    Args:
+        path: Output CSV path.
+        results: Iterable of ASF result objects.
+    """
     columns = [
         "sceneName",
         "startTime",
@@ -73,6 +113,19 @@ def write_scene_csv(path: Path, results: Iterable) -> None:
 
 
 def apply_selection_policy(results: list, selection_cfg: dict, reference_date: str) -> tuple[list, list[str]]:
+    """Apply date-selection policy to full search results.
+
+    Args:
+        results: All ASF results sorted by start time.
+        selection_cfg: Selection config from TOML.
+        reference_date: Reference date in YYYY-MM-DD format.
+
+    Returns:
+        Tuple of (selected results, selected unique dates).
+
+    Raises:
+        ValueError: If selection mode or parameters are invalid.
+    """
     mode = selection_cfg.get("mode", "none")
     max_dates = int(selection_cfg.get("max_dates", 0))
     require_reference = bool(selection_cfg.get("require_reference", True))
@@ -110,6 +163,15 @@ def apply_selection_policy(results: list, selection_cfg: dict, reference_date: s
 
 
 def filter_geojson(full_geojson: dict, selected_scene_names: set[str]) -> dict:
+    """Filter a full GeoJSON feature collection to selected scenes only.
+
+    Args:
+        full_geojson: GeoJSON dict from ASF results.
+        selected_scene_names: Scene names to retain.
+
+    Returns:
+        Filtered GeoJSON feature collection.
+    """
     features = full_geojson.get("features", [])
     filtered = [
         f
@@ -120,6 +182,11 @@ def filter_geojson(full_geojson: dict, selected_scene_names: set[str]) -> dict:
 
 
 def main() -> int:
+    """Parse CLI args, run ASF search, and write stack manifest products.
+
+    Returns:
+        Exit code (0 for success).
+    """
     parser = argparse.ArgumentParser(
         description="Search Sentinel-1 SLC scenes for the Miami stack config."
     )
