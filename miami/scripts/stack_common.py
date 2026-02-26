@@ -11,8 +11,12 @@ from typing import Iterable
 from urllib.parse import urlparse
 
 KML_NS = {"kml": "http://www.opengis.net/kml/2.2"}
-DEFAULT_STACK_CONFIG_REL = (
-    "miami/insar/us_isleofnormandy_s1_asc_t48/config/processing_configuration.toml"
+# Empty default means: auto-discover when possible, otherwise require --config.
+DEFAULT_STACK_CONFIG_REL = ""
+STACK_CONFIG_GLOBS = (
+    "projects/*/insar/*/config/processing_configuration.toml",
+    "miami/insar/*/config/processing_configuration.toml",
+    "example_project/insar/*/config/processing_configuration.toml",
 )
 
 
@@ -41,6 +45,80 @@ def resolve_path(repo_root: Path, path_value: str) -> Path:
     """
     p = Path(path_value)
     return p if p.is_absolute() else (repo_root / p).resolve()
+
+
+def discover_stack_configs(repo_root: Path) -> list[Path]:
+    """Discover candidate stack config files under known project folders.
+
+    Args:
+        repo_root: Repository root directory.
+
+    Returns:
+        Sorted unique absolute paths to discovered stack config files.
+    """
+    seen: set[Path] = set()
+    discovered: list[Path] = []
+    for pattern in STACK_CONFIG_GLOBS:
+        for path in sorted(repo_root.glob(pattern)):
+            resolved = path.resolve()
+            if resolved in seen or not resolved.is_file():
+                continue
+            seen.add(resolved)
+            discovered.append(resolved)
+    return discovered
+
+
+def resolve_stack_config(repo_root: Path, config_value: str) -> Path:
+    """Resolve stack config path from CLI value or auto-discovery.
+
+    Why:
+        Avoid implicit coupling to a single hard-coded Miami project path.
+
+    Args:
+        repo_root: Repository root directory.
+        config_value: Optional CLI config path.
+
+    Returns:
+        Absolute stack config path.
+
+    Raises:
+        FileNotFoundError: If no candidate config exists.
+        RuntimeError: If multiple candidate configs exist and none was selected.
+    """
+    text = str(config_value).strip() if config_value is not None else ""
+    if text:
+        path = resolve_path(repo_root, text)
+        if not path.exists():
+            raise FileNotFoundError(f"Stack config does not exist: {path}")
+        return path
+
+    candidates = discover_stack_configs(repo_root)
+    if len(candidates) == 1:
+        return candidates[0]
+    if not candidates:
+        raise FileNotFoundError(
+            "No processing_configuration.toml found. Pass --config explicitly."
+        )
+    options = "\n".join(f"  - {p}" for p in candidates)
+    raise RuntimeError(
+        "Multiple stack configs found. Pass --config explicitly.\nCandidates:\n"
+        f"{options}"
+    )
+
+
+def infer_stack_root(config_path: Path) -> Path:
+    """Infer stack root directory from stack config path.
+
+    Expected layout:
+        <project>/insar/<stack_name>/config/processing_configuration.toml
+
+    Args:
+        config_path: Absolute stack config path.
+
+    Returns:
+        Inferred stack root directory path (`.../insar/<stack_name>`).
+    """
+    return config_path.resolve().parent.parent
 
 
 def parse_kml_points(kml_path: Path) -> list[tuple[float, float]]:

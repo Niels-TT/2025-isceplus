@@ -26,6 +26,11 @@ mamba run -n isce3-feb python scripts/discover_s1_candidates.py \
   --config <your_config.toml>
 ```
 
+Discovery outputs include:
+- `search/candidates/geometry_candidates.csv`
+- `search/candidates/geometry_candidates.json`
+- `search/candidates/geometry_candidates_map.png` (AOI vs stack footprints)
+
 Then optionally validate in ASF Vertex.
 
 ## Discovery in ASF Vertex (Manual Recon)

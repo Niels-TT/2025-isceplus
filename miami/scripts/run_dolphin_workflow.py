@@ -4,11 +4,12 @@
 Technical summary:
     Resolves Dolphin config path from stack TOML (or CLI override) and executes
     `dolphin run` with optional debug logging. Optionally runs config-driven
-    point exports (CSV/KMZ) after successful completion.
+    post-processing stages (point exports, raster quicklooks, LOS decomposition)
+    after successful completion.
 
 Why:
     Keep execution reproducible and consistent with the project config wiring,
-    including post-processing artifacts used in operational point workflows.
+    including post-processing artifacts used in operational analysis workflows.
 """
 
 from __future__ import annotations
@@ -19,7 +20,13 @@ import subprocess
 import sys
 from pathlib import Path
 
-from stack_common import DEFAULT_STACK_CONFIG_REL, read_toml, resolve_path
+from stack_common import (
+    DEFAULT_STACK_CONFIG_REL,
+    infer_stack_root,
+    read_toml,
+    resolve_path,
+    resolve_stack_config,
+)
 
 
 def command_exists(cmd: str) -> bool:
@@ -45,6 +52,12 @@ def should_run_raster_viz_export(cfg: dict) -> bool:
         .get("raster_viz", {})
         .get("enabled", False)
     )
+
+
+def should_run_decomposition(cfg: dict) -> bool:
+    """Check whether decomposition should auto-run after Dolphin."""
+    decomp = cfg.get("processing", {}).get("decomposition", {})
+    return bool(decomp.get("enabled", False) and decomp.get("run_after_dolphin", False))
 
 
 def run_point_export(repo_root: Path, stack_config: Path, dry_run: bool = False) -> None:
@@ -103,6 +116,34 @@ def run_raster_viz_export(repo_root: Path, stack_config: Path, dry_run: bool = F
     subprocess.run(cmd, check=True)
 
 
+def run_decomposition(repo_root: Path, stack_config: Path, dry_run: bool = False) -> None:
+    """Execute LOS decomposition helper script.
+
+    Args:
+        repo_root: Repository root directory.
+        stack_config: Absolute stack config path.
+        dry_run: Whether to pass `--dry-run`.
+    """
+    script = repo_root / "scripts/decompose_los_velocity.py"
+    if not script.exists():
+        print(f"Decomposition script missing: {script}", file=sys.stderr)
+        raise FileNotFoundError(script)
+
+    cmd = [
+        sys.executable,
+        str(script),
+        "--repo-root",
+        str(repo_root),
+        "--config",
+        str(stack_config),
+    ]
+    if dry_run:
+        cmd.append("--dry-run")
+
+    print(f"Decomposition command: {' '.join(cmd)}")
+    subprocess.run(cmd, check=True)
+
+
 def main() -> int:
     """Parse CLI args and execute Dolphin workflow.
 
@@ -147,16 +188,26 @@ def main() -> int:
         action="store_true",
         help="Skip raster quicklook export stage after Dolphin run.",
     )
+    parser.add_argument(
+        "--skip-decomposition",
+        action="store_true",
+        help="Skip LOS decomposition stage even when enabled in config.",
+    )
     args = parser.parse_args()
 
     repo_root = Path(args.repo_root).resolve()
-    stack_config = resolve_path(repo_root, args.config)
+    try:
+        stack_config = resolve_stack_config(repo_root, args.config)
+    except (FileNotFoundError, RuntimeError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
     cfg = read_toml(stack_config)
     dolphin_cfg = cfg.get("processing", {}).get("dolphin", {})
+    stack_root = infer_stack_root(stack_config)
 
     dolphin_config_value = args.dolphin_config or dolphin_cfg.get(
         "config_file",
-        "miami/insar/us_isleofnormandy_s1_asc_t48/stack/dolphin/config/dolphin_config.yaml",
+        str(stack_root / "stack" / "dolphin" / "config" / "dolphin_config.yaml"),
     )
     dolphin_config = resolve_path(repo_root, dolphin_config_value)
 
@@ -180,6 +231,8 @@ def main() -> int:
             run_point_export(repo_root=repo_root, stack_config=stack_config, dry_run=True)
         if should_run_raster_viz_export(cfg) and not args.skip_raster_viz_export:
             run_raster_viz_export(repo_root=repo_root, stack_config=stack_config, dry_run=True)
+        if should_run_decomposition(cfg) and not args.skip_decomposition:
+            run_decomposition(repo_root=repo_root, stack_config=stack_config, dry_run=True)
         return 0
 
     subprocess.run(cmd, check=True)
@@ -187,6 +240,8 @@ def main() -> int:
         run_point_export(repo_root=repo_root, stack_config=stack_config, dry_run=False)
     if should_run_raster_viz_export(cfg) and not args.skip_raster_viz_export:
         run_raster_viz_export(repo_root=repo_root, stack_config=stack_config, dry_run=False)
+    if should_run_decomposition(cfg) and not args.skip_decomposition:
+        run_decomposition(repo_root=repo_root, stack_config=stack_config, dry_run=False)
     return 0
 
 

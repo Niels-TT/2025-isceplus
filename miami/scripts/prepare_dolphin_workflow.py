@@ -25,9 +25,11 @@ import h5py
 from stack_common import (
     DEFAULT_STACK_CONFIG_REL,
     buffer_bbox,
+    infer_stack_root,
     kml_bbox,
     read_toml,
     resolve_path,
+    resolve_stack_config,
 )
 
 
@@ -56,6 +58,20 @@ def command_exists(cmd: str) -> bool:
         True when command is found, otherwise False.
     """
     return shutil.which(cmd) is not None
+
+
+def dolphin_supports_cslc_file_list() -> bool:
+    """Check whether installed Dolphin supports `--cslc-file-list`."""
+    try:
+        proc = subprocess.run(
+            ["dolphin", "config", "--help"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except Exception:  # noqa: BLE001
+        return False
+    return "--cslc-file-list" in proc.stdout
 
 
 def discover_cslc_candidates(
@@ -275,6 +291,33 @@ def add_cli_override(cmd: list[str], option_key: str, option_value: object) -> N
     )
 
 
+def build_inline_cslc_fallback_cmd(cmd: list[str], cslc_files: list[Path]) -> list[str] | None:
+    """Build Dolphin config command fallback using inline `--cslc` entries.
+
+    Why:
+        Some Dolphin versions do not parse `--cslc-file-list` consistently.
+        This fallback keeps compatibility without changing user config.
+
+    Args:
+        cmd: Original command list containing `--cslc-file-list <path>`.
+        cslc_files: Valid CSLC file paths to inline.
+
+    Returns:
+        Fallback command list, or None when no conversion is possible.
+    """
+    if "--cslc-file-list" not in cmd:
+        return None
+    idx = cmd.index("--cslc-file-list")
+    if idx + 1 >= len(cmd):
+        return None
+    return [
+        *cmd[:idx],
+        "--cslc",
+        *(str(p) for p in cslc_files),
+        *cmd[idx + 2 :],
+    ]
+
+
 def canonical_option_key(option_name: str) -> str:
     """Canonicalize a Dolphin CLI option name for overlap checks.
 
@@ -390,11 +433,21 @@ def main() -> int:
         action="store_true",
         help="Validate inputs and print Dolphin command without writing files.",
     )
+    parser.add_argument(
+        "--skip-qc",
+        action="store_true",
+        help="Skip interferogram-network QC plot stage even if enabled in config.",
+    )
     args = parser.parse_args()
 
     repo_root = Path(args.repo_root).resolve()
-    config_path = resolve_path(repo_root, args.config)
+    try:
+        config_path = resolve_stack_config(repo_root, args.config)
+    except (FileNotFoundError, RuntimeError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
     cfg = read_toml(config_path)
+    stack_root = infer_stack_root(config_path)
 
     search_cfg = cfg["search"]
     compass_cfg = cfg.get("processing", {}).get("compass", {})
@@ -402,24 +455,24 @@ def main() -> int:
 
     compass_work_dir = resolve_path(
         repo_root,
-        compass_cfg.get("work_dir", "miami/insar/us_isleofnormandy_s1_asc_t48/stack/compass"),
+        compass_cfg.get("work_dir", str(stack_root / "stack" / "compass")),
     )
     dolphin_work_dir = resolve_path(
         repo_root,
-        dolphin_cfg.get("work_dir", "miami/insar/us_isleofnormandy_s1_asc_t48/stack/dolphin"),
+        dolphin_cfg.get("work_dir", str(stack_root / "stack" / "dolphin")),
     )
     dolphin_config_file = resolve_path(
         repo_root,
         dolphin_cfg.get(
             "config_file",
-            "miami/insar/us_isleofnormandy_s1_asc_t48/stack/dolphin/config/dolphin_config.yaml",
+            str(stack_root / "stack" / "dolphin" / "config" / "dolphin_config.yaml"),
         ),
     )
     cslc_file_list = resolve_path(
         repo_root,
         dolphin_cfg.get(
             "cslc_file_list",
-            "miami/insar/us_isleofnormandy_s1_asc_t48/stack/dolphin/inputs/cslc_files.txt",
+            str(stack_root / "stack" / "dolphin" / "inputs" / "cslc_files.txt"),
         ),
     )
     cslc_glob = str(dolphin_cfg.get("cslc_glob", "t*/20*/t*.h5")).strip() or "t*/20*/t*.h5"
@@ -442,6 +495,8 @@ def main() -> int:
     mask_input_ps = bool_cfg(dolphin_cfg, "phase_linking_mask_input_ps", False)
     run_inversion = bool_cfg(dolphin_cfg, "timeseries_run_inversion", True)
     run_velocity = bool_cfg(dolphin_cfg, "timeseries_run_velocity", True)
+    qc_cfg = dolphin_cfg.get("qc", {})
+    qc_enabled = bool_cfg(qc_cfg, "enabled", False)
 
     # Optional scalar knobs (only forwarded when explicitly configured).
     mask_file = dolphin_cfg.get("mask_file")
@@ -722,8 +777,17 @@ def main() -> int:
             )
             return 2
 
-    cmd += ["--cslc-file-list", str(cslc_file_list)]
+    supports_cslc_file_list = dolphin_supports_cslc_file_list()
+    if supports_cslc_file_list:
+        cmd += ["--cslc-file-list", str(cslc_file_list)]
+    else:
+        cmd += ["--cslc", *(str(p) for p in valid_cslc)]
     cmd += extra_cli_args
+    fallback_cmd = (
+        build_inline_cslc_fallback_cmd(cmd, valid_cslc)
+        if supports_cslc_file_list
+        else None
+    )
 
     reference_template_file = (
         resolve_path(repo_root, reference_template_file_value)
@@ -741,6 +805,15 @@ def main() -> int:
         if reference_template_file is not None
         else None
     )
+    qc_script = Path(__file__).with_name("plot_ifg_network_qc.py")
+    qc_cmd = [
+        sys.executable,
+        str(qc_script),
+        "--repo-root",
+        str(repo_root),
+        "--config",
+        str(config_path),
+    ]
 
     print(f"Config: {config_path}")
     print(f"COMPASS work dir: {compass_work_dir}")
@@ -761,11 +834,19 @@ def main() -> int:
     print(f"Dolphin option_overrides from TOML: {len(option_overrides)}")
     print(f"Extra Dolphin CLI args from TOML: {len(extra_cli_args)}")
     print(f"Raw extra_cli_args allowed: {allow_raw_extra_cli_args}")
+    print(f"Dolphin supports --cslc-file-list: {supports_cslc_file_list}")
+    print(f"QC network plot enabled: {qc_enabled and not args.skip_qc}")
     print("\nDolphin config command:")
     print(" ".join(cmd))
+    if fallback_cmd is not None:
+        print("\nDolphin fallback command (if --cslc-file-list is rejected):")
+        print(" ".join(fallback_cmd))
     if reference_cmd is not None:
         print("\nDolphin reference-template command:")
         print(" ".join(reference_cmd))
+    if qc_enabled and not args.skip_qc:
+        print("\nDolphin QC command:")
+        print(" ".join(qc_cmd))
 
     if args.dry_run:
         return 0
@@ -781,7 +862,42 @@ def main() -> int:
         encoding="utf-8",
     )
 
-    subprocess.run(cmd, check=True)
+    used_inline_cslc_fallback = False
+    effective_cmd = cmd
+    if fallback_cmd is None:
+        subprocess.run(cmd, check=True)
+    else:
+        primary = subprocess.run(
+            cmd,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if primary.returncode == 0:
+            if primary.stdout.strip():
+                print(primary.stdout.strip())
+            if primary.stderr.strip():
+                print(primary.stderr.strip())
+        else:
+            print(
+                "[WARN] Dolphin config failed with --cslc-file-list; "
+                "retrying with inline --cslc entries for compatibility."
+            )
+            if primary.stderr.strip():
+                stderr_lines = [ln for ln in primary.stderr.strip().splitlines() if ln.strip()]
+                if stderr_lines:
+                    print(f"[WARN] Dolphin error tail: {stderr_lines[-1]}")
+            subprocess.run(fallback_cmd, check=True)
+            used_inline_cslc_fallback = True
+            effective_cmd = fallback_cmd
+
+    qc_executed = False
+    if qc_enabled and not args.skip_qc:
+        if not qc_script.exists():
+            print(f"Missing QC script: {qc_script}", file=sys.stderr)
+            return 2
+        subprocess.run(qc_cmd, check=True)
+        qc_executed = True
 
     summary = {
         "prepared_utc": datetime.now(timezone.utc).isoformat(),
@@ -805,7 +921,12 @@ def main() -> int:
         "extra_cli_args": extra_cli_args,
         "allow_raw_extra_cli_args": allow_raw_extra_cli_args,
         "reference_template_file": str(reference_template_file) if reference_template_file else None,
-        "command": cmd,
+        "qc_enabled": qc_enabled,
+        "qc_skipped_cli": args.skip_qc,
+        "qc_executed": qc_executed,
+        "qc_command": qc_cmd if qc_enabled and not args.skip_qc else None,
+        "used_inline_cslc_fallback": used_inline_cslc_fallback,
+        "command": effective_cmd,
     }
     summary_path = dolphin_work_dir / "prepare_summary.json"
     summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")

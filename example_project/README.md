@@ -53,6 +53,9 @@ mamba run -n isce3-feb python scripts/discover_s1_candidates.py \
 ```
 
 Why: this ranks available acquisition geometries by temporal coverage so you can choose the most stable stack setup.
+It also writes a visual map:
+- `.../search/candidates/geometry_candidates_map.png`
+showing AOI vs all discovered stack footprints.
 
 After choosing geometry, update `[search]` fields:
 - `flight_direction`
@@ -131,6 +134,21 @@ mamba run -n isce3-feb python miami/scripts/run_dolphin_workflow.py \
   --repo-root . \
   --config <your_config.toml>
 ```
+
+7. Optional dual-track decomposition (after both ASC + DSC Dolphin runs exist):
+```bash
+mamba run -n isce3-feb python scripts/decompose_los_velocity.py \
+  --repo-root . \
+  --config <your_config.toml>
+```
+
+Why: this estimates East/Up velocity by solving the dual-geometry LOS system on a common raster grid.
+
+During Dolphin prepare, QC outputs are created automatically when `[processing.dolphin.qc].enabled = true`:
+- `.../stack/dolphin/qc/ifg_network.png`
+- `.../stack/dolphin/qc/ifg_network_summary.json`
+
+Why: this lets you inspect network connectivity before full displacement analysis.
 
 ## Notes On What Is Automatic vs Manual
 - Automatic:

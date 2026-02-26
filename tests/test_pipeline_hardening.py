@@ -34,6 +34,7 @@ class PipelineHardeningTests(unittest.TestCase):
         cls.run_compass = _load_module(repo_root / "miami/scripts/run_compass_runfiles.py")
         cls.prepare_dolphin = _load_module(repo_root / "miami/scripts/prepare_dolphin_workflow.py")
         cls.export_points = _load_module(repo_root / "miami/scripts/export_dolphin_points.py")
+        cls.stack_common = _load_module(repo_root / "miami/scripts/stack_common.py")
 
     def test_runfile_sha256_changes_when_content_changes(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -102,6 +103,29 @@ class PipelineHardeningTests(unittest.TestCase):
                     max_points=0,
                     strict_grid_match=True,
                 )
+
+    def test_resolve_stack_config_single_candidate(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            cfg = root / "projects" / "my_city" / "insar" / "stack_a" / "config" / "processing_configuration.toml"
+            cfg.parent.mkdir(parents=True, exist_ok=True)
+            cfg.write_text("[project]\nname='x'\n", encoding="utf-8")
+
+            resolved = self.stack_common.resolve_stack_config(root, "")
+            self.assertEqual(resolved, cfg.resolve())
+
+    def test_resolve_stack_config_multiple_candidates_requires_explicit(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            cfg1 = root / "projects" / "a" / "insar" / "stack_a" / "config" / "processing_configuration.toml"
+            cfg2 = root / "miami" / "insar" / "stack_b" / "config" / "processing_configuration.toml"
+            cfg1.parent.mkdir(parents=True, exist_ok=True)
+            cfg2.parent.mkdir(parents=True, exist_ok=True)
+            cfg1.write_text("[project]\nname='a'\n", encoding="utf-8")
+            cfg2.write_text("[project]\nname='b'\n", encoding="utf-8")
+
+            with self.assertRaises(RuntimeError):
+                self.stack_common.resolve_stack_config(root, "")
 
 
 if __name__ == "__main__":

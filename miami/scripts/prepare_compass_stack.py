@@ -31,11 +31,13 @@ import yaml
 from stack_common import (
     DEFAULT_STACK_CONFIG_REL,
     buffer_bbox,
+    infer_stack_root,
     iso_to_yyyymmdd,
     kml_bbox,
     read_scene_rows,
     read_toml,
     resolve_path,
+    resolve_stack_config,
 )
 
 
@@ -355,8 +357,13 @@ def main() -> int:
     args = parser.parse_args()
 
     repo_root = Path(args.repo_root).resolve()
-    config_path = resolve_path(repo_root, args.config)
+    try:
+        config_path = resolve_stack_config(repo_root, args.config)
+    except (FileNotFoundError, RuntimeError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
     cfg = read_toml(config_path)
+    stack_root = infer_stack_root(config_path)
 
     out_cfg = cfg["outputs"]
     storage_cfg = cfg["storage"]
@@ -379,7 +386,7 @@ def main() -> int:
 
     work_dir = resolve_path(
         repo_root,
-        compass_cfg.get("work_dir", "miami/insar/us_isleofnormandy_s1_asc_t48/stack/compass"),
+        compass_cfg.get("work_dir", str(stack_root / "stack" / "compass")),
     )
     orbit_dir_value = compass_cfg.get("orbit_dir", "")
     orbit_dir = resolve_path(repo_root, orbit_dir_value) if orbit_dir_value else None

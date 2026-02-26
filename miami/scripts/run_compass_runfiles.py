@@ -22,7 +22,13 @@ from pathlib import Path
 
 from tqdm import tqdm
 
-from stack_common import DEFAULT_STACK_CONFIG_REL, read_toml, resolve_path
+from stack_common import (
+    DEFAULT_STACK_CONFIG_REL,
+    infer_stack_root,
+    read_toml,
+    resolve_path,
+    resolve_stack_config,
+)
 
 
 def load_state(path: Path) -> dict:
@@ -165,14 +171,20 @@ def main() -> int:
     args = parser.parse_args()
 
     repo_root = Path(args.repo_root).resolve()
-    config_path = resolve_path(repo_root, args.config)
+    try:
+        config_path = resolve_stack_config(repo_root, args.config)
+    except (FileNotFoundError, RuntimeError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
     cfg = read_toml(config_path)
+    stack_root = infer_stack_root(config_path)
     compass_cfg = cfg.get("processing", {}).get("compass", {})
     browse_image_enabled = bool(compass_cfg.get("browse_image", False))
     disable_hdf5_file_locking = bool(compass_cfg.get("disable_hdf5_file_locking", True))
 
     work_dir_value = args.work_dir or compass_cfg.get(
-        "work_dir", "miami/insar/us_isleofnormandy_s1_asc_t48/stack/compass"
+        "work_dir",
+        str(stack_root / "stack" / "compass"),
     )
     work_dir = resolve_path(repo_root, work_dir_value)
     run_dir = work_dir / "run_files"
@@ -181,7 +193,7 @@ def main() -> int:
         print("Run prepare_compass_stack.py first.", file=sys.stderr)
         return 2
 
-    logs_default = "miami/insar/us_isleofnormandy_s1_asc_t48/logs/compass"
+    logs_default = str(stack_root / "logs" / "compass")
     logs_dir = resolve_path(repo_root, args.logs_dir or compass_cfg.get("logs_dir", logs_default))
     state_path = work_dir / "run_state.json"
 

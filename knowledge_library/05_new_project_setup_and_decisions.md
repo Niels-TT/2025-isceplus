@@ -35,6 +35,9 @@ mamba run -n isce3-feb python scripts/discover_s1_candidates.py \
 ```
 
 Review the ranked table (direction/orbit/frame) and choose the best temporal coverage.
+Also inspect:
+- `.../search/candidates/geometry_candidates_map.png`
+for AOI vs discovered stack footprint overlap.
 
 Why: choosing geometry first prevents weak or fragmented stacks.
 
@@ -100,6 +103,10 @@ Use your project config in all commands:
 6. `run_dolphin_workflow.py`
 
 Why: each stage consumes outputs from the previous stage, preserving reproducibility.
+
+QC note:
+- Dolphin prepare now writes `ifg_network.png` and `ifg_network_summary.json`\n  when `[processing.dolphin.qc].enabled = true`.
+- Use these to check if network connectivity/edge density is sensible before trusting results.
 
 ## Decision Boundaries (Practical)
 - Geometry choice: manual decision, supported by `discover_s1_candidates.py`.

@@ -29,7 +29,12 @@ from urllib.parse import urlparse
 import asf_search as asf
 from tqdm import tqdm
 
-from stack_common import DEFAULT_STACK_CONFIG_REL, read_toml, resolve_path
+from stack_common import (
+    DEFAULT_STACK_CONFIG_REL,
+    read_toml,
+    resolve_path,
+    resolve_stack_config,
+)
 
 
 @dataclass
@@ -369,7 +374,11 @@ def main() -> int:
     args = parser.parse_args()
 
     repo_root = Path(args.repo_root).resolve()
-    config_path = resolve_path(repo_root, args.config)
+    try:
+        config_path = resolve_stack_config(repo_root, args.config)
+    except (FileNotFoundError, RuntimeError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
     cfg = read_toml(config_path)
     out_cfg = cfg["outputs"]
     storage_cfg = cfg["storage"]

@@ -21,8 +21,8 @@ beam_mode = "IW"
 flight_direction = "ASCENDING"
 # Set using scripts/discover_s1_candidates.py before running stack search.
 relative_orbit = 0
-start = "2015-09-21T00:00:00Z"
-end = "2022-04-30T23:59:59Z"
+start = "2015-09-21"
+end = "2022-04-30"
 # Replace after first search + scripts/suggest_reference_date.py.
 reference_date = "2017-01-01"
 # Keep 0 while exploring; lock real counts once stack settings are final.
@@ -231,6 +231,14 @@ allow_raw_extra_cli_args = false # Safety default: keep false and prefer option_
 # "timeseries-options.reference-point" = [1000, 1000] # Force inversion reference pixel (row, col).
 # "timeseries-options.apply-mask-to-timeseries" = true # Apply input mask to timeseries outputs.
 
+[processing.dolphin.qc]
+# Intermediate quality-control visuals (generated at Dolphin prepare stage).
+enabled = true # Auto-create interferogram network PNG + JSON from prepared CSLC list.
+ifg_network_png = "__PROJECT_ROOT__/insar/__STACK_NAME__/stack/dolphin/qc/ifg_network.png"
+ifg_network_summary_json = "__PROJECT_ROOT__/insar/__STACK_NAME__/stack/dolphin/qc/ifg_network_summary.json"
+max_bandwidth_override = 0 # 0 means use processing.dolphin.max_bandwidth.
+max_temporal_baseline_days_override = 0 # 0 means use processing.dolphin.max_temporal_baseline (if set).
+
 [processing.dolphin.point_exports]
 # Operational point exports (auto-run after successful dolphin run).
 enabled = true # Master switch: run CSV/KMZ point export stage automatically.
@@ -276,3 +284,29 @@ name_prefix = "__PROJECT_NAME___dolphin" # Product naming prefix for KMZ overlay
 clip_abs_mm_per_year = 30.0 # Symmetric clip for diverging blue/white/red color ramp.
 legend_width_px = 512 # Embedded legend width in KMZ.
 legend_height_px = 40 # Embedded legend height in KMZ.
+
+[processing.decomposition]
+# Dual-geometry LOS decomposition (ASC + DSC velocity -> East + Up).
+enabled = false # Set true only after both ASC and DSC Dolphin velocity rasters exist.
+run_after_dolphin = false # Optional auto-run at end of run_dolphin_workflow.py.
+output_dir = "__PROJECT_ROOT__/insar/__STACK_NAME__/stack/decomposition"
+target_grid = "asc" # Grid on which outputs are written: asc or dsc.
+min_temporal_coherence = 0.6 # Applied when coherence rasters are provided.
+max_condition_number = 50.0 # Geometry guard; lower is stricter.
+write_consistency_error = true # Writes residual LOS reconstruction error raster.
+velocity_resampling = "bilinear" # Resampling for cross-track velocity reprojection.
+coherence_resampling = "bilinear" # Resampling for cross-track coherence reprojection.
+
+[processing.decomposition.track_asc]
+name = "__PROJECT_NAME___asc"
+velocity_file = "__PROJECT_ROOT__/insar/__STACK_NAME__/stack/dolphin/timeseries/velocity.tif"
+coherence_file = "" # Optional; if blank, decomposition runs without coherence thresholding.
+los_east_coeff = -0.62 # Replace with ASC east projection coefficient for your chosen geometry.
+los_up_coeff = 0.78 # Replace with ASC up projection coefficient for your chosen geometry.
+
+[processing.decomposition.track_dsc]
+name = "__PROJECT_NAME___dsc"
+velocity_file = "__PROJECT_ROOT__/insar/__STACK_NAME__/stack/dolphin/timeseries/velocity.tif" # Replace with descending velocity path.
+coherence_file = "" # Optional descending coherence raster.
+los_east_coeff = 0.62 # Replace with DSC east projection coefficient.
+los_up_coeff = 0.78 # Replace with DSC up projection coefficient.

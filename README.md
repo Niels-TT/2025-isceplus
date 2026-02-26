@@ -61,6 +61,11 @@ Then follow:
 Useful setup helpers:
 - `scripts/discover_s1_candidates.py`: discover candidate direction/orbit/frame geometry coverage before locking search settings.
 - `scripts/suggest_reference_date.py`: suggest a reference date from your searched stack dates.
+- `scripts/decompose_los_velocity.py`: decompose ASC/DSC LOS velocity rasters into East/Up velocity rasters.
+- `miami/scripts/plot_ifg_network_qc.py`: create interferogram-network QC PNG/JSON from prepared Dolphin inputs.
+
+Config note:
+- If your repo has multiple stack configs, always pass `--config <.../processing_configuration.toml>` explicitly.
 
 ## Repo Layout
 - `course/`: course notebooks and lesson material (reference/tutorial content)

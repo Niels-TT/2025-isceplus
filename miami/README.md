@@ -65,14 +65,17 @@ We always pass:
 - Selection policy: first 20 acquisition dates from reference date (`2015-09-21`)
 
 ## Script Roles
+- `scripts/discover_s1_candidates.py` (repo-level): discovery ranking + map of AOI vs candidate stack footprints
 - `miami/scripts/search_s1_stack.py`: ASF query + scene manifests
 - `miami/scripts/download_s1_stack.py`: storage-aware SLC downloader with resumable manifest + tqdm
 - `miami/scripts/download_dem_opentopography.py`: DEM download from OpenTopography
 - `miami/scripts/prepare_compass_stack.py`: validates inputs and generates COMPASS run files
 - `miami/scripts/run_compass_runfiles.py`: executes COMPASS run files with resume state
 - `miami/scripts/prepare_dolphin_workflow.py`: validates CSLC outputs and generates Dolphin YAML
+- `miami/scripts/plot_ifg_network_qc.py`: generates interferogram-network QC PNG/JSON from prepared CSLC stack
 - `miami/scripts/run_dolphin_workflow.py`: runs Dolphin and optional point export
 - `miami/scripts/export_dolphin_points.py`: converts velocity raster to operational CSV/KMZ points
+- `scripts/decompose_los_velocity.py`: decomposes ASC/DSC LOS velocity rasters into East/Up components
 
 ## Run Order
 Why: each stage depends on outputs from the previous one.
@@ -81,6 +84,14 @@ Why: each stage depends on outputs from the previous one.
 
 ```bash
 mamba run -n isce3-feb python miami/scripts/search_s1_stack.py \
+  --repo-root . \
+  --config miami/insar/us_isleofnormandy_s1_asc_t48/config/processing_configuration.toml
+```
+
+Optional pre-search geometry discovery (recommended when starting new AOIs):
+
+```bash
+mamba run -n isce3-feb python scripts/discover_s1_candidates.py \
   --repo-root . \
   --config miami/insar/us_isleofnormandy_s1_asc_t48/config/processing_configuration.toml
 ```
@@ -151,6 +162,16 @@ mamba run -n isce3-feb python miami/scripts/run_dolphin_workflow.py \
   --debug
 ```
 
+9. Optional dual-track decomposition (after both ASC + DSC Dolphin runs exist):
+
+```bash
+mamba run -n isce3-feb python scripts/decompose_los_velocity.py \
+  --repo-root . \
+  --config miami/insar/us_isleofnormandy_s1_asc_t48/config/processing_configuration.toml
+```
+
+Why: this solves the standard 2-geometry linear system per pixel to estimate East/Up velocity from LOS velocities.
+
 ## Inputs And Outputs By Stage
 Why: clear I/O boundaries make debugging and reruns easier.
 
@@ -172,10 +193,14 @@ Why: clear I/O boundaries make debugging and reruns easier.
 - Prepare Dolphin
   - Input: COMPASS CSLC HDF5
   - Output: `stack/dolphin/config/dolphin_config.yaml`, `stack/dolphin/inputs/cslc_files.txt`, `prepare_summary.json`
+  - If enabled: `stack/dolphin/qc/ifg_network.png` + `ifg_network_summary.json`
 - Run Dolphin
   - Input: Dolphin YAML + CSLC list
   - Output: wrapped/unwrapped phase, timeseries, velocity rasters under `stack/dolphin/`
   - If enabled: point products under `stack/dolphin/exports/` (`.csv`, `.kmz`, summary JSON)
+- LOS decomposition (optional)
+  - Input: ASC velocity raster + DSC velocity raster (+ optional coherence rasters + LOS projection coefficients)
+  - Output: `stack/decomposition/east_velocity_m_per_year.tif`, `up_velocity_m_per_year.tif`, `valid_mask.tif`, `condition_number.tif`, optional `consistency_error_m_per_year.tif`, and `decomposition_summary.json`
 
 ## Orbit And Date Notes
 Why: these are common first-run confusion points.

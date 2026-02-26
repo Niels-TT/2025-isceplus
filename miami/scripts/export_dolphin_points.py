@@ -30,7 +30,13 @@ import rasterio
 from rasterio.transform import xy
 from rasterio.warp import transform as rio_transform
 
-from stack_common import DEFAULT_STACK_CONFIG_REL, read_toml, resolve_path
+from stack_common import (
+    DEFAULT_STACK_CONFIG_REL,
+    infer_stack_root,
+    read_toml,
+    resolve_path,
+    resolve_stack_config,
+)
 
 
 def bool_cfg(cfg: dict[str, Any], key: str, default: bool) -> bool:
@@ -397,10 +403,15 @@ def main() -> int:
     args = parser.parse_args()
 
     repo_root = Path(args.repo_root).resolve()
-    stack_config = resolve_path(repo_root, args.config)
+    try:
+        stack_config = resolve_stack_config(repo_root, args.config)
+    except (FileNotFoundError, RuntimeError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
     cfg = read_toml(stack_config)
     dolphin_cfg = cfg.get("processing", {}).get("dolphin", {})
     export_cfg = dolphin_cfg.get("point_exports", {})
+    stack_root = infer_stack_root(stack_config)
 
     enabled = bool_cfg(export_cfg, "enabled", False)
     if not enabled:
@@ -412,7 +423,7 @@ def main() -> int:
         str_cfg(
             dolphin_cfg,
             "work_dir",
-            "miami/insar/us_isleofnormandy_s1_asc_t48/stack/dolphin",
+            str(stack_root / "stack" / "dolphin"),
         ),
     )
     output_dir = resolve_path(

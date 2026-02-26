@@ -29,6 +29,7 @@ from stack_common import (
     kml_bbox,
     read_toml,
     resolve_path,
+    resolve_stack_config,
 )
 
 OPENTOPO_URL = "https://portal.opentopography.org/API/globaldem"
@@ -168,7 +169,11 @@ def main() -> int:
     args = parser.parse_args()
 
     repo_root = Path(args.repo_root).resolve()
-    config_path = resolve_path(repo_root, args.config)
+    try:
+        config_path = resolve_stack_config(repo_root, args.config)
+    except (FileNotFoundError, RuntimeError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
     cfg = read_toml(config_path)
     dem_cfg = cfg.get("ancillary", {}).get("dem", {})
 

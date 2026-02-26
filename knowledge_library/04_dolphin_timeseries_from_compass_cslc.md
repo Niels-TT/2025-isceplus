@@ -22,38 +22,49 @@ COMPASS handles geocoding/coregistration and writes CSLC files per date/burst; D
 - `stack/dolphin/inputs/cslc_files.txt`: validated CSLC list
 - `stack/dolphin/config/dolphin_config.yaml`: workflow config
 - `stack/dolphin/prepare_summary.json`: prep summary
+- `stack/dolphin/qc/ifg_network.png`: interferogram-network QC figure
+- `stack/dolphin/qc/ifg_network_summary.json`: network metrics/edges summary
 - `stack/dolphin/` run outputs from Dolphin (wrapped IFGs, unwrap, timeseries, velocity)
 
 ## Step 1: Prepare Dolphin Config
 Why: validate CSLC completeness and generate a deterministic Dolphin config from project settings.
 
 ```bash
-mamba run -n isce3-feb python /home/niels/course/2025-isceplus/miami/scripts/prepare_dolphin_workflow.py \
-  --repo-root /home/niels/course/2025-isceplus \
-  --config miami/insar/us_isleofnormandy_s1_asc_t48/config/processing_configuration.toml
+mamba run -n isce3-feb python miami/scripts/prepare_dolphin_workflow.py \
+  --repo-root . \
+  --config <your_config.toml>
 ```
 
 Notes:
 - By default this fails if valid CSLC count is lower than `expected_unique_dates` from search config.
 - Use `--allow-partial-cslc` only for testing on incomplete stacks.
 - CSLC discovery is strict by default via `processing.dolphin.cslc_glob`; recursive `**/*.h5` fallback is opt-in (`allow_recursive_cslc_search=true`).
+- QC figure generation is controlled by `[processing.dolphin.qc]`.
 
 ## Step 2: Run Dolphin Workflow
 Why: execute wrapped phase estimation through time-series/velocity products.
 
 ```bash
-mamba run -n isce3-feb python /home/niels/course/2025-isceplus/miami/scripts/run_dolphin_workflow.py \
-  --repo-root /home/niels/course/2025-isceplus \
-  --config miami/insar/us_isleofnormandy_s1_asc_t48/config/processing_configuration.toml
+mamba run -n isce3-feb python miami/scripts/run_dolphin_workflow.py \
+  --repo-root . \
+  --config <your_config.toml>
 ```
 
 For verbose troubleshooting:
 
 ```bash
-mamba run -n isce3-feb python /home/niels/course/2025-isceplus/miami/scripts/run_dolphin_workflow.py \
-  --repo-root /home/niels/course/2025-isceplus \
-  --config miami/insar/us_isleofnormandy_s1_asc_t48/config/processing_configuration.toml \
+mamba run -n isce3-feb python miami/scripts/run_dolphin_workflow.py \
+  --repo-root . \
+  --config <your_config.toml> \
   --debug
+```
+
+Standalone QC re-run (without re-running prepare):
+
+```bash
+mamba run -n isce3-feb python miami/scripts/plot_ifg_network_qc.py \
+  --repo-root . \
+  --config <your_config.toml>
 ```
 
 ## Minimal Practical Defaults
