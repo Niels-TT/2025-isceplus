@@ -167,6 +167,9 @@ mamba run -n isce3-feb python scripts/08_run_compass_runfiles.py \
   --config <your_config.toml>
 ```
 
+`07_prepare_compass_stack.py` auto-downloads the OPERA burst DB to
+`processing.compass.burst_db_file` when that file is missing.
+
 6. Prepare + run Dolphin:
 ```bash
 mamba run -n isce3-feb python scripts/09_prepare_dolphin_workflow.py \
@@ -200,6 +203,7 @@ Why: this lets you inspect network connectivity before full displacement analysi
   - ASF search outputs
   - SLC download + resume manifest
   - DEM retrieval
+  - OPERA burst DB bootstrap during COMPASS prepare (when configured)
   - Orbit retrieval via COMPASS/S1Reader
   - COMPASS runfile generation/execution
   - Dolphin config/run and exports

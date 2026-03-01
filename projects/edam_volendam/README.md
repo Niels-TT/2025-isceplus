@@ -128,6 +128,10 @@ mamba run -n isce3-feb python scripts/11_run_dolphin_workflow.py --repo-root . -
 Then repeat the same six commands with:
 `projects/edam_volendam/insar/edam_volendam_s1_dsc_t000/config/processing_configuration.toml`
 
+Note:
+- `07_prepare_compass_stack.py` auto-downloads the OPERA burst DB to `processing.compass.burst_db_file` when missing.
+- You no longer need a manual `curl` step before 07.
+
 ## 7) Decomposition (After Both Dolphin Runs)
 ```bash
 mamba run -n isce3-feb python scripts/90_decompose_los_velocity.py \
@@ -148,3 +152,7 @@ Naming note: `90_` is used for optional end-of-pipeline utilities, separate from
 - Search returns `Selected scenes: 0`:
   AOI KML and/or `relative_orbit` is mismatched.
   Re-check `projects/edam_volendam/aux/bbox.kml`, then re-run discovery and update orbit.
+- `07_prepare_compass_stack.py` fails with scene completeness errors:
+  finish/retry step 5 download (`05_download_s1_stack.py --download`) for that stack, then rerun 07.
+- `08_run_compass_runfiles.py` says `Missing run_files directory`:
+  step 07 did not complete successfully for that stack; fix 07 error first, then rerun 08.

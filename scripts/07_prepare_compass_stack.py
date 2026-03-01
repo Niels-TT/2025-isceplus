@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -26,7 +27,9 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 
+import requests
 import yaml
+from tqdm import tqdm
 
 from stack_common import (
     DEFAULT_STACK_CONFIG_REL,
@@ -38,6 +41,11 @@ from stack_common import (
     read_toml,
     resolve_path,
     resolve_stack_config,
+)
+
+DEFAULT_BURST_DB_URL = (
+    "https://github.com/opera-adt/burst_db/releases/download/v0.10.0/"
+    "opera-burst-bbox-only.sqlite3"
 )
 
 
@@ -297,6 +305,67 @@ def normalize_runconfigs(
     return changed, browse_changed, notes, schema_errors
 
 
+def stream_download(url: str, out_path: Path, timeout_s: int) -> int:
+    """Stream a file download to disk with progress feedback.
+
+    Args:
+        url: Source URL.
+        out_path: Destination file path.
+        timeout_s: Request timeout in seconds.
+
+    Returns:
+        Number of bytes written to output file.
+
+    Raises:
+        RuntimeError: If HTTP request fails.
+    """
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = out_path.with_suffix(out_path.suffix + ".part")
+    if tmp_path.exists():
+        tmp_path.unlink()
+
+    with requests.get(url, stream=True, timeout=timeout_s) as r:
+        try:
+            r.raise_for_status()
+        except Exception as exc:  # noqa: BLE001
+            body = ""
+            try:
+                body = r.text[:500] if r.text else ""
+            except Exception:  # noqa: BLE001
+                body = ""
+            raise RuntimeError(
+                f"Burst DB download failed (HTTP {r.status_code}): {body}"
+            ) from exc
+
+        total_bytes = None
+        content_len = r.headers.get("Content-Length") or r.headers.get("content-length")
+        if content_len and content_len.isdigit():
+            total_bytes = int(content_len)
+
+        written = 0
+        with (
+            tmp_path.open("wb") as f,
+            tqdm(
+                total=total_bytes,
+                desc="Burst DB download",
+                unit="B",
+                unit_scale=True,
+                unit_divisor=1024,
+                dynamic_ncols=True,
+            ) as bar,
+        ):
+            for chunk in r.iter_content(chunk_size=1024 * 1024):
+                if not chunk:
+                    continue
+                f.write(chunk)
+                n = len(chunk)
+                written += n
+                bar.update(n)
+
+    os.replace(tmp_path, out_path)
+    return written
+
+
 def main() -> int:
     """Parse CLI args, validate preprocessing inputs, and generate run files.
 
@@ -354,6 +423,20 @@ def main() -> int:
         default="",
         help="Optional end date override (YYYYMMDD).",
     )
+    parser.add_argument(
+        "--burst-db-url",
+        default="",
+        help=(
+            "Optional OPERA burst DB URL override. "
+            "Defaults to processing.compass.burst_db_url or built-in release URL."
+        ),
+    )
+    parser.add_argument(
+        "--burst-db-timeout-seconds",
+        type=int,
+        default=300,
+        help="HTTP timeout for auto-downloading burst DB when missing.",
+    )
     args = parser.parse_args()
 
     repo_root = Path(args.repo_root).resolve()
@@ -392,6 +475,10 @@ def main() -> int:
     orbit_dir = resolve_path(repo_root, orbit_dir_value) if orbit_dir_value else None
     burst_db_value = str(compass_cfg.get("burst_db_file", "")).strip()
     burst_db_file = resolve_path(repo_root, burst_db_value) if burst_db_value else None
+    burst_db_url_cfg = str(compass_cfg.get("burst_db_url", "")).strip()
+    burst_db_url = args.burst_db_url or burst_db_url_cfg or DEFAULT_BURST_DB_URL
+    burst_db_downloaded = False
+    burst_db_bytes: int | None = None
 
     if not scene_csv.exists():
         print(f"Missing scene metadata CSV: {scene_csv}", file=sys.stderr)
@@ -408,19 +495,34 @@ def main() -> int:
     if not command_exists("s1_geocode_stack.py"):
         print("Missing command: s1_geocode_stack.py. Install COMPASS in isce3-feb.", file=sys.stderr)
         return 2
-    if burst_db_file is not None and not burst_db_file.exists():
-        print(f"Missing burst DB file: {burst_db_file}", file=sys.stderr)
-        print(
-            "Download OPERA burst DB (SQLite), then rerun prepare. Example:",
-            file=sys.stderr,
-        )
-        print(
-            "curl -L -o "
-            f"{burst_db_file} "
-            "https://github.com/opera-adt/burst_db/releases/download/v0.10.0/opera-burst-bbox-only.sqlite3",
-            file=sys.stderr,
-        )
-        return 2
+    if burst_db_file is not None:
+        if burst_db_file.exists() and burst_db_file.stat().st_size == 0:
+            print(f"Burst DB file exists but is empty, re-downloading: {burst_db_file}")
+            burst_db_file.unlink()
+        if not burst_db_file.exists():
+            if args.dry_run:
+                print(f"Burst DB file missing (dry-run): {burst_db_file}")
+                print(f"Burst DB URL (would download): {burst_db_url}")
+            else:
+                print(f"Missing burst DB file: {burst_db_file}")
+                print(f"Downloading OPERA burst DB from: {burst_db_url}")
+                try:
+                    burst_db_bytes = stream_download(
+                        burst_db_url,
+                        burst_db_file,
+                        timeout_s=args.burst_db_timeout_seconds,
+                    )
+                except RuntimeError as exc:
+                    print(str(exc), file=sys.stderr)
+                    print(
+                        "Set processing.compass.burst_db_url or use --burst-db-url to provide a reachable source.",
+                        file=sys.stderr,
+                    )
+                    return 2
+                burst_db_downloaded = True
+                print(f"Downloaded burst DB bytes: {burst_db_bytes}")
+        if burst_db_file.exists():
+            burst_db_bytes = burst_db_file.stat().st_size
 
     vd_ok, vertical_datum, require_ellipsoid = validate_vertical_datum(dem_cfg)
     if not vd_ok:
@@ -562,6 +664,8 @@ def main() -> int:
     print(f"Work dir: {work_dir}")
     print(f"Orbit dir: {effective_orbit_dir}")
     print(f"Burst DB file: {burst_db_file or '(COMPASS default)'}")
+    print(f"Burst DB URL: {burst_db_url if burst_db_file else '(not used)'}")
+    print(f"Burst DB downloaded in this run: {burst_db_downloaded}")
     print(f"AOI processing buffer: {aoi_buffer_m:.1f} m")
     print(f"Browse image enabled: {browse_image_enabled}")
     print("Orbit retrieval: COMPASS/S1Reader uses local cache and auto-downloads missing files.")
@@ -618,6 +722,9 @@ def main() -> int:
         "work_dir": str(work_dir),
         "orbit_dir": str(effective_orbit_dir),
         "burst_db_file": str(burst_db_file) if burst_db_file else None,
+        "burst_db_url": burst_db_url if burst_db_file else None,
+        "burst_db_downloaded": burst_db_downloaded,
+        "burst_db_bytes": burst_db_bytes,
         "dem_file": str(dem_file),
         "dem_vertical_datum": vertical_datum,
         "require_ellipsoid_heights": require_ellipsoid,
