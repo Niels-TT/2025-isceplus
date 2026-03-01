@@ -4,7 +4,7 @@ This folder contains the practical pipeline for:
 `ASF search -> SLC download -> DEM download -> COMPASS coregistration -> Dolphin time series -> optional point export`.
 
 Note:
-- The scripts under `miami/scripts/` are config-driven and reusable for non-Miami projects.
+- The scripts under `scripts/` are config-driven and reusable for non-Miami projects.
 - Use `--config <your_project>/.../processing_configuration.toml` to run the same pipeline on another AOI.
 - Generic scaffold and setup flow: `example_project/README.md`.
 
@@ -31,7 +31,7 @@ python -m pip -V
 5. Verify credentials:
 
 ```bash
-bash scripts/check_credentials.sh
+bash scripts/00_check_credentials.sh
 ```
 
 Important:
@@ -65,17 +65,18 @@ We always pass:
 - Selection policy: first 20 acquisition dates from reference date (`2015-09-21`)
 
 ## Script Roles
-- `scripts/discover_s1_candidates.py` (repo-level): discovery ranking + map of AOI vs candidate stack footprints
-- `miami/scripts/search_s1_stack.py`: ASF query + scene manifests
-- `miami/scripts/download_s1_stack.py`: storage-aware SLC downloader with resumable manifest + tqdm
-- `miami/scripts/download_dem_opentopography.py`: DEM download from OpenTopography
-- `miami/scripts/prepare_compass_stack.py`: validates inputs and generates COMPASS run files
-- `miami/scripts/run_compass_runfiles.py`: executes COMPASS run files with resume state
-- `miami/scripts/prepare_dolphin_workflow.py`: validates CSLC outputs and generates Dolphin YAML
-- `miami/scripts/plot_ifg_network_qc.py`: generates interferogram-network QC PNG/JSON from prepared CSLC stack
-- `miami/scripts/run_dolphin_workflow.py`: runs Dolphin and optional point export
-- `miami/scripts/export_dolphin_points.py`: converts velocity raster to operational CSV/KMZ points
-- `scripts/decompose_los_velocity.py`: decomposes ASC/DSC LOS velocity rasters into East/Up components
+- `scripts/02_discover_s1_candidates.py` (repo-level): discovery ranking + map of AOI vs candidate stack footprints
+- `scripts/03_search_s1_stack.py`: ASF query + scene manifests
+- `scripts/05_download_s1_stack.py`: storage-aware SLC downloader with resumable manifest + tqdm
+- `scripts/06_download_dem_opentopography.py`: DEM download from OpenTopography
+- `scripts/07_prepare_compass_stack.py`: validates inputs and generates COMPASS run files
+- `scripts/08_run_compass_runfiles.py`: executes COMPASS run files with resume state
+- `scripts/09_prepare_dolphin_workflow.py`: validates CSLC outputs and generates Dolphin YAML
+- `scripts/10_plot_ifg_network_qc.py`: generates interferogram-network QC PNG/JSON from prepared CSLC stack
+- `scripts/11_run_dolphin_workflow.py`: runs Dolphin and optional point export
+- `scripts/12_export_dolphin_points.py`: converts velocity raster to operational CSV/KMZ points
+- `scripts/13_export_dolphin_raster_viz.py`: converts velocity raster to colorized GeoTIFF/KMZ overlay products
+- `scripts/90_decompose_los_velocity.py`: decomposes ASC/DSC LOS velocity rasters into East/Up components
 
 ## Run Order
 Why: each stage depends on outputs from the previous one.
@@ -83,7 +84,7 @@ Why: each stage depends on outputs from the previous one.
 1. Search stack (if you need to regenerate search results):
 
 ```bash
-mamba run -n isce3-feb python miami/scripts/search_s1_stack.py \
+mamba run -n isce3-feb python scripts/03_search_s1_stack.py \
   --repo-root . \
   --config miami/insar/us_isleofnormandy_s1_asc_t48/config/processing_configuration.toml
 ```
@@ -91,7 +92,7 @@ mamba run -n isce3-feb python miami/scripts/search_s1_stack.py \
 Optional pre-search geometry discovery (recommended when starting new AOIs):
 
 ```bash
-mamba run -n isce3-feb python scripts/discover_s1_candidates.py \
+mamba run -n isce3-feb python scripts/02_discover_s1_candidates.py \
   --repo-root . \
   --config miami/insar/us_isleofnormandy_s1_asc_t48/config/processing_configuration.toml
 ```
@@ -99,7 +100,7 @@ mamba run -n isce3-feb python scripts/discover_s1_candidates.py \
 2. SLC download dry-run (size/free-space check):
 
 ```bash
-mamba run -n isce3-feb python miami/scripts/download_s1_stack.py \
+mamba run -n isce3-feb python scripts/05_download_s1_stack.py \
   --repo-root . \
   --config miami/insar/us_isleofnormandy_s1_asc_t48/config/processing_configuration.toml
 ```
@@ -107,7 +108,7 @@ mamba run -n isce3-feb python miami/scripts/download_s1_stack.py \
 3. SLC download for real:
 
 ```bash
-mamba run -n isce3-feb python miami/scripts/download_s1_stack.py \
+mamba run -n isce3-feb python scripts/05_download_s1_stack.py \
   --repo-root . \
   --config miami/insar/us_isleofnormandy_s1_asc_t48/config/processing_configuration.toml \
   --download
@@ -116,7 +117,7 @@ mamba run -n isce3-feb python miami/scripts/download_s1_stack.py \
 4. Download DEM:
 
 ```bash
-mamba run -n isce3-feb python miami/scripts/download_dem_opentopography.py \
+mamba run -n isce3-feb python scripts/06_download_dem_opentopography.py \
   --repo-root . \
   --config miami/insar/us_isleofnormandy_s1_asc_t48/config/processing_configuration.toml
 ```
@@ -124,7 +125,7 @@ mamba run -n isce3-feb python miami/scripts/download_dem_opentopography.py \
 5. Prepare COMPASS:
 
 ```bash
-mamba run -n isce3-feb python miami/scripts/prepare_compass_stack.py \
+mamba run -n isce3-feb python scripts/07_prepare_compass_stack.py \
   --repo-root . \
   --config miami/insar/us_isleofnormandy_s1_asc_t48/config/processing_configuration.toml
 ```
@@ -132,7 +133,7 @@ mamba run -n isce3-feb python miami/scripts/prepare_compass_stack.py \
 6. Run COMPASS coregistration:
 
 ```bash
-mamba run -n isce3-feb python miami/scripts/run_compass_runfiles.py \
+mamba run -n isce3-feb python scripts/08_run_compass_runfiles.py \
   --repo-root . \
   --config miami/insar/us_isleofnormandy_s1_asc_t48/config/processing_configuration.toml
 ```
@@ -140,7 +141,7 @@ mamba run -n isce3-feb python miami/scripts/run_compass_runfiles.py \
 7. Prepare Dolphin:
 
 ```bash
-mamba run -n isce3-feb python miami/scripts/prepare_dolphin_workflow.py \
+mamba run -n isce3-feb python scripts/09_prepare_dolphin_workflow.py \
   --repo-root . \
   --config miami/insar/us_isleofnormandy_s1_asc_t48/config/processing_configuration.toml
 ```
@@ -148,7 +149,7 @@ mamba run -n isce3-feb python miami/scripts/prepare_dolphin_workflow.py \
 8. Run Dolphin:
 
 ```bash
-mamba run -n isce3-feb python miami/scripts/run_dolphin_workflow.py \
+mamba run -n isce3-feb python scripts/11_run_dolphin_workflow.py \
   --repo-root . \
   --config miami/insar/us_isleofnormandy_s1_asc_t48/config/processing_configuration.toml
 ```
@@ -156,7 +157,7 @@ mamba run -n isce3-feb python miami/scripts/run_dolphin_workflow.py \
 Optional debug:
 
 ```bash
-mamba run -n isce3-feb python miami/scripts/run_dolphin_workflow.py \
+mamba run -n isce3-feb python scripts/11_run_dolphin_workflow.py \
   --repo-root . \
   --config miami/insar/us_isleofnormandy_s1_asc_t48/config/processing_configuration.toml \
   --debug
@@ -165,7 +166,7 @@ mamba run -n isce3-feb python miami/scripts/run_dolphin_workflow.py \
 9. Optional dual-track decomposition (after both ASC + DSC Dolphin runs exist):
 
 ```bash
-mamba run -n isce3-feb python scripts/decompose_los_velocity.py \
+mamba run -n isce3-feb python scripts/90_decompose_los_velocity.py \
   --repo-root . \
   --config miami/insar/us_isleofnormandy_s1_asc_t48/config/processing_configuration.toml
 ```

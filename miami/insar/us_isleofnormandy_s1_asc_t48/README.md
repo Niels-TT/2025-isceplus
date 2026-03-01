@@ -30,7 +30,7 @@ From repo root (`/home/niels/insar/git/2025-isceplus`):
 1. Download DEM:
 
 ```bash
-mamba run -n isce3-feb python miami/scripts/download_dem_opentopography.py \
+mamba run -n isce3-feb python scripts/06_download_dem_opentopography.py \
   --repo-root . \
   --config miami/insar/us_isleofnormandy_s1_asc_t48/config/processing_configuration.toml
 ```
@@ -38,7 +38,7 @@ mamba run -n isce3-feb python miami/scripts/download_dem_opentopography.py \
 2. Prepare COMPASS:
 
 ```bash
-mamba run -n isce3-feb python miami/scripts/prepare_compass_stack.py \
+mamba run -n isce3-feb python scripts/07_prepare_compass_stack.py \
   --repo-root . \
   --config miami/insar/us_isleofnormandy_s1_asc_t48/config/processing_configuration.toml
 ```
@@ -46,7 +46,7 @@ mamba run -n isce3-feb python miami/scripts/prepare_compass_stack.py \
 3. Run COMPASS coregistration:
 
 ```bash
-mamba run -n isce3-feb python miami/scripts/run_compass_runfiles.py \
+mamba run -n isce3-feb python scripts/08_run_compass_runfiles.py \
   --repo-root . \
   --config miami/insar/us_isleofnormandy_s1_asc_t48/config/processing_configuration.toml
 ```
@@ -54,7 +54,7 @@ mamba run -n isce3-feb python miami/scripts/run_compass_runfiles.py \
 4. Prepare Dolphin:
 
 ```bash
-mamba run -n isce3-feb python miami/scripts/prepare_dolphin_workflow.py \
+mamba run -n isce3-feb python scripts/09_prepare_dolphin_workflow.py \
   --repo-root . \
   --config miami/insar/us_isleofnormandy_s1_asc_t48/config/processing_configuration.toml
 ```
@@ -62,7 +62,7 @@ mamba run -n isce3-feb python miami/scripts/prepare_dolphin_workflow.py \
 5. Run Dolphin (+ optional point export if enabled in TOML):
 
 ```bash
-mamba run -n isce3-feb python miami/scripts/run_dolphin_workflow.py \
+mamba run -n isce3-feb python scripts/11_run_dolphin_workflow.py \
   --repo-root . \
   --config miami/insar/us_isleofnormandy_s1_asc_t48/config/processing_configuration.toml
 ```

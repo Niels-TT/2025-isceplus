@@ -21,7 +21,7 @@ Why: choosing direction/orbit/frame from coverage statistics is more reliable th
 Script-assisted discovery:
 
 ```bash
-mamba run -n isce3-feb python scripts/discover_s1_candidates.py \
+mamba run -n isce3-feb python scripts/02_discover_s1_candidates.py \
   --repo-root . \
   --config <your_config.toml>
 ```
@@ -65,7 +65,7 @@ Why: standard structure keeps automation and debugging predictable across AOIs.
 Why: Generate machine-usable scene lists with explicit reproducibility.
 
 ```bash
-mamba run -n isce3-feb python miami/scripts/search_s1_stack.py \
+mamba run -n isce3-feb python scripts/03_search_s1_stack.py \
   --repo-root . \
   --config <your_config.toml>
 ```
@@ -93,7 +93,7 @@ Example (Miami stack):
 Optional helper after search:
 
 ```bash
-mamba run -n isce3-feb python scripts/suggest_reference_date.py \
+mamba run -n isce3-feb python scripts/04_suggest_reference_date.py \
   --repo-root . \
   --config <your_config.toml>
 ```
@@ -136,7 +136,7 @@ Why: keep download logic explicit and storage-safe instead of auto-pulling by ac
 Dry-run:
 
 ```bash
-mamba run -n isce3-feb python miami/scripts/download_s1_stack.py \
+mamba run -n isce3-feb python scripts/05_download_s1_stack.py \
   --repo-root . \
   --config <your_config.toml>
 ```
@@ -144,7 +144,7 @@ mamba run -n isce3-feb python miami/scripts/download_s1_stack.py \
 Execute:
 
 ```bash
-mamba run -n isce3-feb python miami/scripts/download_s1_stack.py \
+mamba run -n isce3-feb python scripts/05_download_s1_stack.py \
   --repo-root . \
   --config <your_config.toml> \
   --download

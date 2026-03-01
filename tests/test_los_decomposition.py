@@ -29,7 +29,7 @@ class LOSDecompositionTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         repo_root = Path(__file__).resolve().parents[1]
-        cls.decomp = _load_module(repo_root / "scripts/decompose_los_velocity.py")
+        cls.decomp = _load_module(repo_root / "scripts/90_decompose_los_velocity.py")
 
     def _write_raster(self, path: Path, arr: np.ndarray) -> None:
         profile = {

@@ -30,7 +30,7 @@ COMPASS handles geocoding/coregistration and writes CSLC files per date/burst; D
 Why: validate CSLC completeness and generate a deterministic Dolphin config from project settings.
 
 ```bash
-mamba run -n isce3-feb python miami/scripts/prepare_dolphin_workflow.py \
+mamba run -n isce3-feb python scripts/09_prepare_dolphin_workflow.py \
   --repo-root . \
   --config <your_config.toml>
 ```
@@ -45,7 +45,7 @@ Notes:
 Why: execute wrapped phase estimation through time-series/velocity products.
 
 ```bash
-mamba run -n isce3-feb python miami/scripts/run_dolphin_workflow.py \
+mamba run -n isce3-feb python scripts/11_run_dolphin_workflow.py \
   --repo-root . \
   --config <your_config.toml>
 ```
@@ -53,7 +53,7 @@ mamba run -n isce3-feb python miami/scripts/run_dolphin_workflow.py \
 For verbose troubleshooting:
 
 ```bash
-mamba run -n isce3-feb python miami/scripts/run_dolphin_workflow.py \
+mamba run -n isce3-feb python scripts/11_run_dolphin_workflow.py \
   --repo-root . \
   --config <your_config.toml> \
   --debug
@@ -62,7 +62,7 @@ mamba run -n isce3-feb python miami/scripts/run_dolphin_workflow.py \
 Standalone QC re-run (without re-running prepare):
 
 ```bash
-mamba run -n isce3-feb python miami/scripts/plot_ifg_network_qc.py \
+mamba run -n isce3-feb python scripts/10_plot_ifg_network_qc.py \
   --repo-root . \
   --config <your_config.toml>
 ```
@@ -93,7 +93,7 @@ mamba run -n isce3-feb dolphin config --print-empty --outfile /tmp/dolphin_empty
 ```
 
 3. Project workflow shortcut:
-- Running `prepare_dolphin_workflow.py` now also writes the same reference style file to:
+- Running `09_prepare_dolphin_workflow.py` now also writes the same reference style file to:
   `miami/insar/us_isleofnormandy_s1_asc_t48/stack/dolphin/config/dolphin_config.reference.yaml`
 - Use it as a catalog while keeping your actual run config deterministic.
 

@@ -28,13 +28,13 @@ class PipelineHardeningTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         repo_root = Path(__file__).resolve().parents[1]
-        scripts_dir = repo_root / "miami/scripts"
+        scripts_dir = repo_root / "scripts"
         if str(scripts_dir) not in sys.path:
             sys.path.insert(0, str(scripts_dir))
-        cls.run_compass = _load_module(repo_root / "miami/scripts/run_compass_runfiles.py")
-        cls.prepare_dolphin = _load_module(repo_root / "miami/scripts/prepare_dolphin_workflow.py")
-        cls.export_points = _load_module(repo_root / "miami/scripts/export_dolphin_points.py")
-        cls.stack_common = _load_module(repo_root / "miami/scripts/stack_common.py")
+        cls.run_compass = _load_module(repo_root / "scripts/08_run_compass_runfiles.py")
+        cls.prepare_dolphin = _load_module(repo_root / "scripts/09_prepare_dolphin_workflow.py")
+        cls.export_points = _load_module(repo_root / "scripts/12_export_dolphin_points.py")
+        cls.stack_common = _load_module(repo_root / "scripts/stack_common.py")
 
     def test_runfile_sha256_changes_when_content_changes(self) -> None:
         with tempfile.TemporaryDirectory() as td:

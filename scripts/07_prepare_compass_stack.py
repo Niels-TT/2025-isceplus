@@ -12,7 +12,7 @@ Why:
 
 Note:
     This stage prepares run files only; execution happens in
-    `run_compass_runfiles.py`.
+    `08_run_compass_runfiles.py`.
 """
 
 from __future__ import annotations
@@ -403,7 +403,7 @@ def main() -> int:
     dem_exists = dem_file.exists()
     if not dem_exists and not args.dry_run:
         print(f"Missing DEM file: {dem_file}", file=sys.stderr)
-        print("Download DEM first with miami/scripts/download_dem_opentopography.py.", file=sys.stderr)
+        print("Download DEM first with scripts/06_download_dem_opentopography.py.", file=sys.stderr)
         return 2
     if not command_exists("s1_geocode_stack.py"):
         print("Missing command: s1_geocode_stack.py. Install COMPASS in isce3-feb.", file=sys.stderr)
@@ -660,7 +660,7 @@ def main() -> int:
     else:
         print("Orbit status: no local orbit files detected in cache.", file=sys.stderr)
     print(f"Summary: {summary_path}")
-    print("Next: run miami/scripts/run_compass_runfiles.py to execute coregistration.")
+    print("Next: run scripts/08_run_compass_runfiles.py to execute coregistration.")
     return 0
 
 

@@ -805,7 +805,7 @@ def main() -> int:
         if reference_template_file is not None
         else None
     )
-    qc_script = Path(__file__).with_name("plot_ifg_network_qc.py")
+    qc_script = Path(__file__).with_name("10_plot_ifg_network_qc.py")
     qc_cmd = [
         sys.executable,
         str(qc_script),
@@ -933,7 +933,7 @@ def main() -> int:
 
     print("\nDolphin config generated.")
     print(f"Summary: {summary_path}")
-    print("Next: run miami/scripts/run_dolphin_workflow.py to execute Dolphin.")
+    print("Next: run scripts/11_run_dolphin_workflow.py to execute Dolphin.")
     return 0
 
 

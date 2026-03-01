@@ -68,7 +68,7 @@ def run_point_export(repo_root: Path, stack_config: Path, dry_run: bool = False)
         stack_config: Absolute stack config path.
         dry_run: Whether to pass `--dry-run`.
     """
-    exporter = Path(__file__).with_name("export_dolphin_points.py")
+    exporter = Path(__file__).with_name("12_export_dolphin_points.py")
     if not exporter.exists():
         print(f"Point export script missing: {exporter}", file=sys.stderr)
         raise FileNotFoundError(exporter)
@@ -96,7 +96,7 @@ def run_raster_viz_export(repo_root: Path, stack_config: Path, dry_run: bool = F
         stack_config: Absolute stack config path.
         dry_run: Whether to pass `--dry-run`.
     """
-    exporter = Path(__file__).with_name("export_dolphin_raster_viz.py")
+    exporter = Path(__file__).with_name("13_export_dolphin_raster_viz.py")
     if not exporter.exists():
         print(f"Raster viz export script missing: {exporter}", file=sys.stderr)
         raise FileNotFoundError(exporter)
@@ -124,7 +124,7 @@ def run_decomposition(repo_root: Path, stack_config: Path, dry_run: bool = False
         stack_config: Absolute stack config path.
         dry_run: Whether to pass `--dry-run`.
     """
-    script = repo_root / "scripts/decompose_los_velocity.py"
+    script = repo_root / "scripts/90_decompose_los_velocity.py"
     if not script.exists():
         print(f"Decomposition script missing: {script}", file=sys.stderr)
         raise FileNotFoundError(script)
@@ -216,7 +216,7 @@ def main() -> int:
         return 2
     if not dolphin_config.exists():
         print(f"Missing Dolphin config: {dolphin_config}", file=sys.stderr)
-        print("Run miami/scripts/prepare_dolphin_workflow.py first.", file=sys.stderr)
+        print("Run scripts/09_prepare_dolphin_workflow.py first.", file=sys.stderr)
         return 2
 
     cmd = ["dolphin", "run", str(dolphin_config)]

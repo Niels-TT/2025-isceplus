@@ -14,14 +14,14 @@ conda activate isce3-feb
 3. Confirm credentials:
 
 ```bash
-bash scripts/check_credentials.sh
+bash scripts/00_check_credentials.sh
 ```
 
 ## Quick Start
 1. Create a new project from this template:
 
 ```bash
-python scripts/create_project_from_example.py \
+python scripts/01_create_project_from_example.py \
   --repo-root . \
   --project-name my_city
 ```
@@ -47,7 +47,7 @@ Set at minimum:
 Run candidate discovery before locking direction/orbit/frame:
 
 ```bash
-mamba run -n isce3-feb python scripts/discover_s1_candidates.py \
+mamba run -n isce3-feb python scripts/02_discover_s1_candidates.py \
   --repo-root . \
   --config projects/my_city/insar/my_city_s1_asc_t000/config/processing_configuration.toml
 ```
@@ -70,7 +70,7 @@ Burst note:
 After running stack search once, suggest a robust reference date:
 
 ```bash
-mamba run -n isce3-feb python scripts/suggest_reference_date.py \
+mamba run -n isce3-feb python scripts/04_suggest_reference_date.py \
   --repo-root . \
   --config projects/my_city/insar/my_city_s1_asc_t000/config/processing_configuration.toml
 ```
@@ -82,25 +82,25 @@ Use your own config path in every command.
 
 1. Search scenes:
 ```bash
-mamba run -n isce3-feb python miami/scripts/search_s1_stack.py \
+mamba run -n isce3-feb python scripts/03_search_s1_stack.py \
   --repo-root . \
   --config <your_config.toml>
 ```
 
 2. Optional: reference-date suggestion (after search):
 ```bash
-mamba run -n isce3-feb python scripts/suggest_reference_date.py \
+mamba run -n isce3-feb python scripts/04_suggest_reference_date.py \
   --repo-root . \
   --config <your_config.toml>
 ```
 
 3. Download SLCs (dry-run first, then real run with `--download`):
 ```bash
-mamba run -n isce3-feb python miami/scripts/download_s1_stack.py \
+mamba run -n isce3-feb python scripts/05_download_s1_stack.py \
   --repo-root . \
   --config <your_config.toml>
 
-mamba run -n isce3-feb python miami/scripts/download_s1_stack.py \
+mamba run -n isce3-feb python scripts/05_download_s1_stack.py \
   --repo-root . \
   --config <your_config.toml> \
   --download
@@ -108,36 +108,36 @@ mamba run -n isce3-feb python miami/scripts/download_s1_stack.py \
 
 4. Download DEM:
 ```bash
-mamba run -n isce3-feb python miami/scripts/download_dem_opentopography.py \
+mamba run -n isce3-feb python scripts/06_download_dem_opentopography.py \
   --repo-root . \
   --config <your_config.toml>
 ```
 
 5. Prepare + run COMPASS coreg:
 ```bash
-mamba run -n isce3-feb python miami/scripts/prepare_compass_stack.py \
+mamba run -n isce3-feb python scripts/07_prepare_compass_stack.py \
   --repo-root . \
   --config <your_config.toml>
 
-mamba run -n isce3-feb python miami/scripts/run_compass_runfiles.py \
+mamba run -n isce3-feb python scripts/08_run_compass_runfiles.py \
   --repo-root . \
   --config <your_config.toml>
 ```
 
 6. Prepare + run Dolphin:
 ```bash
-mamba run -n isce3-feb python miami/scripts/prepare_dolphin_workflow.py \
+mamba run -n isce3-feb python scripts/09_prepare_dolphin_workflow.py \
   --repo-root . \
   --config <your_config.toml>
 
-mamba run -n isce3-feb python miami/scripts/run_dolphin_workflow.py \
+mamba run -n isce3-feb python scripts/11_run_dolphin_workflow.py \
   --repo-root . \
   --config <your_config.toml>
 ```
 
 7. Optional dual-track decomposition (after both ASC + DSC Dolphin runs exist):
 ```bash
-mamba run -n isce3-feb python scripts/decompose_los_velocity.py \
+mamba run -n isce3-feb python scripts/90_decompose_los_velocity.py \
   --repo-root . \
   --config <your_config.toml>
 ```

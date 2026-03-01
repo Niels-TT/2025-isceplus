@@ -39,7 +39,7 @@ Key controls:
 Manual run:
 
 ```bash
-mamba run -n isce3-feb python scripts/decompose_los_velocity.py \
+mamba run -n isce3-feb python scripts/90_decompose_los_velocity.py \
   --repo-root . \
   --config <your_config.toml>
 ```

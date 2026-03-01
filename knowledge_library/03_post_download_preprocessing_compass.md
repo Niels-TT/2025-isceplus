@@ -35,14 +35,14 @@ mamba env update -n isce3-feb -f /home/niels/course/2025-isceplus/envs/isce3-feb
 Why: fail early before long downloads/runs.
 
 ```bash
-bash /home/niels/course/2025-isceplus/scripts/check_credentials.sh
+bash /home/niels/course/2025-isceplus/scripts/00_check_credentials.sh
 ```
 
 ## Step 2: Download DEM (Ellipsoidal Heights)
 Why: geometric coregistration depends on DEM and vertical datum consistency.
 
 ```bash
-mamba run -n isce3-feb python /home/niels/course/2025-isceplus/miami/scripts/download_dem_opentopography.py \
+mamba run -n isce3-feb python /home/niels/course/2025-isceplus/scripts/06_download_dem_opentopography.py \
   --repo-root /home/niels/course/2025-isceplus \
   --config miami/insar/us_isleofnormandy_s1_asc_t48/config/processing_configuration.toml
 ```
@@ -56,7 +56,7 @@ Current recommended config (in `processing_configuration.toml`):
 Why: verify command, AOI bbox, scene completeness, and datum checks before processing.
 
 ```bash
-mamba run -n isce3-feb python /home/niels/course/2025-isceplus/miami/scripts/prepare_compass_stack.py \
+mamba run -n isce3-feb python /home/niels/course/2025-isceplus/scripts/07_prepare_compass_stack.py \
   --repo-root /home/niels/course/2025-isceplus \
   --config miami/insar/us_isleofnormandy_s1_asc_t48/config/processing_configuration.toml \
   --dry-run
@@ -74,7 +74,7 @@ What this validate/prepare step enforces:
 Then run prepare for real:
 
 ```bash
-mamba run -n isce3-feb python /home/niels/course/2025-isceplus/miami/scripts/prepare_compass_stack.py \
+mamba run -n isce3-feb python /home/niels/course/2025-isceplus/scripts/07_prepare_compass_stack.py \
   --repo-root /home/niels/course/2025-isceplus \
   --config miami/insar/us_isleofnormandy_s1_asc_t48/config/processing_configuration.toml
 ```
@@ -83,7 +83,7 @@ mamba run -n isce3-feb python /home/niels/course/2025-isceplus/miami/scripts/pre
 Why: this runs the actual preprocessing/coregistration jobs.
 
 ```bash
-mamba run -n isce3-feb python /home/niels/course/2025-isceplus/miami/scripts/run_compass_runfiles.py \
+mamba run -n isce3-feb python /home/niels/course/2025-isceplus/scripts/08_run_compass_runfiles.py \
   --repo-root /home/niels/course/2025-isceplus \
   --config miami/insar/us_isleofnormandy_s1_asc_t48/config/processing_configuration.toml
 ```
@@ -122,6 +122,6 @@ See: `knowledge_library/04_dolphin_timeseries_from_compass_cslc.md`.
   - this can appear before orbit fallback selection completes
   - verify final prepare output shows `Orbit status: precise POEORB files are being used.`
 - Last acquisition date missing from run files:
-  - ensure you use the updated `prepare_compass_stack.py` that treats `--end-date` as inclusive
+  - ensure you use the updated `07_prepare_compass_stack.py` that treats `--end-date` as inclusive
 - Runfile failure:
   - inspect corresponding log under `logs/compass/`

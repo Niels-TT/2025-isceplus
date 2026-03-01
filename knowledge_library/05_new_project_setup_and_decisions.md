@@ -6,7 +6,7 @@ Why: this runbook turns the pipeline into a reusable workflow for any AOI, not o
 From repo root:
 
 ```bash
-python scripts/create_project_from_example.py \
+python scripts/01_create_project_from_example.py \
   --repo-root . \
   --project-name my_city
 ```
@@ -29,7 +29,7 @@ Why: AOI controls ASF search geometry, DEM bounds, and downstream crop window.
 Before fixing `relative_orbit`, inspect available geometry groups:
 
 ```bash
-mamba run -n isce3-feb python scripts/discover_s1_candidates.py \
+mamba run -n isce3-feb python scripts/02_discover_s1_candidates.py \
   --repo-root . \
   --config projects/my_city/insar/my_city_s1_asc_t000/config/processing_configuration.toml
 ```
@@ -65,7 +65,7 @@ Why: avoid hard failures while still validating path/search logic.
 
 ## 5) Run Search
 ```bash
-mamba run -n isce3-feb python miami/scripts/search_s1_stack.py \
+mamba run -n isce3-feb python scripts/03_search_s1_stack.py \
   --repo-root . \
   --config projects/my_city/insar/my_city_s1_asc_t000/config/processing_configuration.toml
 ```
@@ -74,7 +74,7 @@ Why: this freezes deterministic scene/date manifests before any large download.
 
 ## 6) Suggest Reference Date
 ```bash
-mamba run -n isce3-feb python scripts/suggest_reference_date.py \
+mamba run -n isce3-feb python scripts/04_suggest_reference_date.py \
   --repo-root . \
   --config projects/my_city/insar/my_city_s1_asc_t000/config/processing_configuration.toml
 ```
@@ -95,12 +95,12 @@ Why: now the config can fail fast on accidental search drift.
 
 ## 8) Continue Standard Pipeline
 Use your project config in all commands:
-1. `download_s1_stack.py` (dry-run, then `--download`)
-2. `download_dem_opentopography.py`
-3. `prepare_compass_stack.py`
-4. `run_compass_runfiles.py`
-5. `prepare_dolphin_workflow.py`
-6. `run_dolphin_workflow.py`
+1. `05_download_s1_stack.py` (dry-run, then `--download`)
+2. `06_download_dem_opentopography.py`
+3. `07_prepare_compass_stack.py`
+4. `08_run_compass_runfiles.py`
+5. `09_prepare_dolphin_workflow.py`
+6. `11_run_dolphin_workflow.py`
 
 Why: each stage consumes outputs from the previous stage, preserving reproducibility.
 
@@ -109,8 +109,8 @@ QC note:
 - Use these to check if network connectivity/edge density is sensible before trusting results.
 
 ## Decision Boundaries (Practical)
-- Geometry choice: manual decision, supported by `discover_s1_candidates.py`.
-- Reference date: heuristic suggestion from `suggest_reference_date.py`, final decision is manual.
+- Geometry choice: manual decision, supported by `02_discover_s1_candidates.py`.
+- Reference date: heuristic suggestion from `04_suggest_reference_date.py`, final decision is manual.
 - Dolphin tuning: always iterative per AOI noise/coherence behavior.
 
 Why: these decisions depend on local scene quality and analysis objective; no default can be universally optimal.

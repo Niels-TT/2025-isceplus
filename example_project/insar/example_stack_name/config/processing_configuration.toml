@@ -1,6 +1,6 @@
 [template]
 # Replace placeholders after copying or use:
-#   python scripts/create_project_from_example.py --project-name <name>
+#   python scripts/01_create_project_from_example.py --project-name <name>
 # Placeholders:
 # - __PROJECT_ROOT__ -> project folder path (for example projects/my_city)
 # - __STACK_NAME__   -> stack folder name under insar/
@@ -19,11 +19,11 @@ platform = "SENTINEL1"
 processing_level = "SLC"
 beam_mode = "IW"
 flight_direction = "ASCENDING"
-# Set using scripts/discover_s1_candidates.py before running stack search.
+# Set using scripts/02_discover_s1_candidates.py before running stack search.
 relative_orbit = 0
 start = "2015-09-21"
 end = "2022-04-30"
-# Replace after first search + scripts/suggest_reference_date.py.
+# Replace after first search + scripts/04_suggest_reference_date.py.
 reference_date = "2017-01-01"
 # Keep 0 while exploring; lock real counts once stack settings are final.
 expected_scenes = 0
@@ -288,7 +288,7 @@ legend_height_px = 40 # Embedded legend height in KMZ.
 [processing.decomposition]
 # Dual-geometry LOS decomposition (ASC + DSC velocity -> East + Up).
 enabled = false # Set true only after both ASC and DSC Dolphin velocity rasters exist.
-run_after_dolphin = false # Optional auto-run at end of run_dolphin_workflow.py.
+run_after_dolphin = false # Optional auto-run at end of 11_run_dolphin_workflow.py.
 output_dir = "__PROJECT_ROOT__/insar/__STACK_NAME__/stack/decomposition"
 target_grid = "asc" # Grid on which outputs are written: asc or dsc.
 min_temporal_coherence = 0.6 # Applied when coherence rasters are provided.

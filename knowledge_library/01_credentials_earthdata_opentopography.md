@@ -35,7 +35,7 @@ unset OT_KEY
 Why: Early validation avoids long pipeline runs failing on authentication.
 
 ```bash
-/home/niels/course/2025-isceplus/scripts/check_credentials.sh
+/home/niels/course/2025-isceplus/scripts/00_check_credentials.sh
 ```
 
 Expected signal:

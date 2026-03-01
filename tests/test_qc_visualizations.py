@@ -25,10 +25,10 @@ class QCVisualizationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         repo_root = Path(__file__).resolve().parents[1]
-        scripts_dir = repo_root / "miami/scripts"
+        scripts_dir = repo_root / "scripts"
         if str(scripts_dir) not in sys.path:
             sys.path.insert(0, str(scripts_dir))
-        cls.ifg_qc = _load_module(repo_root / "miami/scripts/plot_ifg_network_qc.py")
+        cls.ifg_qc = _load_module(repo_root / "scripts/10_plot_ifg_network_qc.py")
 
     def test_extract_date_from_name(self) -> None:
         parse = self.ifg_qc.extract_date_from_name

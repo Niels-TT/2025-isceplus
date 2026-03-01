@@ -276,7 +276,7 @@ legend_height_px = 40 # Embedded legend height in KMZ.
 [processing.decomposition]
 # Dual-geometry LOS decomposition (ASC + DSC velocity -> East + Up).
 enabled = false # Set true only after both ASC and DSC Dolphin velocity rasters exist.
-run_after_dolphin = false # Optional auto-run at end of run_dolphin_workflow.py.
+run_after_dolphin = false # Optional auto-run at end of 11_run_dolphin_workflow.py.
 output_dir = "miami/insar/us_isleofnormandy_s1_asc_t48/stack/decomposition"
 target_grid = "asc" # Grid on which outputs are written: asc or dsc.
 min_temporal_coherence = 0.6 # Applied when coherence rasters are provided.

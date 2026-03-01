@@ -37,7 +37,7 @@ Important:
 Why: ASF (Earthdata) and OpenTopography calls need credentials before search/download/DEM steps.
 
 ```bash
-bash scripts/check_credentials.sh
+bash scripts/00_check_credentials.sh
 ```
 
 If checks fail, follow:
@@ -49,7 +49,7 @@ Why: this repo now supports creating new AOI projects without editing Miami file
 Create a new project from template:
 
 ```bash
-python scripts/create_project_from_example.py \
+python scripts/01_create_project_from_example.py \
   --repo-root . \
   --project-name my_city
 ```
@@ -59,10 +59,10 @@ Then follow:
 - `projects/my_city/.../config/processing_configuration.toml` (project-specific settings)
 
 Useful setup helpers:
-- `scripts/discover_s1_candidates.py`: discover candidate direction/orbit/frame geometry coverage before locking search settings.
-- `scripts/suggest_reference_date.py`: suggest a reference date from your searched stack dates.
-- `scripts/decompose_los_velocity.py`: decompose ASC/DSC LOS velocity rasters into East/Up velocity rasters.
-- `miami/scripts/plot_ifg_network_qc.py`: create interferogram-network QC PNG/JSON from prepared Dolphin inputs.
+- `scripts/02_discover_s1_candidates.py`: discover candidate direction/orbit/frame geometry coverage before locking search settings.
+- `scripts/04_suggest_reference_date.py`: suggest a reference date from your searched stack dates.
+- `scripts/90_decompose_los_velocity.py`: decompose ASC/DSC LOS velocity rasters into East/Up velocity rasters.
+- `scripts/10_plot_ifg_network_qc.py`: create interferogram-network QC PNG/JSON from prepared Dolphin inputs.
 
 Config note:
 - If your repo has multiple stack configs, always pass `--config <.../processing_configuration.toml>` explicitly.
