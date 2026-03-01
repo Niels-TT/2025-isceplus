@@ -5,8 +5,6 @@ Run all commands from repo root.
 
 ```bash
 cd /home/niels/insar/git/2025-isceplus
-ASC_CFG="projects/edam_volendam/insar/edam_volendam_s1_asc_t000/config/processing_configuration.toml"
-DSC_CFG="projects/edam_volendam/insar/edam_volendam_s1_dsc_t000/config/processing_configuration.toml"
 ```
 
 ## 0) AOI Sanity Check
@@ -41,7 +39,7 @@ Why: choose direction/orbit/frame from measured coverage instead of guessing.
 ```bash
 mamba run -n isce3-feb python scripts/02_discover_s1_candidates.py \
   --repo-root . \
-  --config "$ASC_CFG" \
+  --config projects/edam_volendam/insar/edam_volendam_s1_asc_t000/config/processing_configuration.toml \
   --min-unique-dates 1
 ```
 
@@ -72,11 +70,11 @@ Why: this materializes deterministic scene manifests consumed by all later steps
 ```bash
 mamba run -n isce3-feb python scripts/03_search_s1_stack.py \
   --repo-root . \
-  --config "$ASC_CFG"
+  --config projects/edam_volendam/insar/edam_volendam_s1_asc_t000/config/processing_configuration.toml
 
 mamba run -n isce3-feb python scripts/03_search_s1_stack.py \
   --repo-root . \
-  --config "$DSC_CFG"
+  --config projects/edam_volendam/insar/edam_volendam_s1_dsc_t000/config/processing_configuration.toml
 ```
 
 Check that these now exist:
@@ -90,11 +88,11 @@ Run once per stack:
 ```bash
 mamba run -n isce3-feb python scripts/04_suggest_reference_date.py \
   --repo-root . \
-  --config "$ASC_CFG"
+  --config projects/edam_volendam/insar/edam_volendam_s1_asc_t000/config/processing_configuration.toml
 
 mamba run -n isce3-feb python scripts/04_suggest_reference_date.py \
   --repo-root . \
-  --config "$DSC_CFG"
+  --config projects/edam_volendam/insar/edam_volendam_s1_dsc_t000/config/processing_configuration.toml
 ```
 
 Update each config with your chosen `reference_date`.
@@ -105,38 +103,41 @@ Then optionally tighten rules:
 Re-run search (`03_search_s1_stack.py`) after tightening to verify deterministic counts.
 
 ## 6) Main Pipeline Per Stack
-Run the following for `"$ASC_CFG"` and then for `"$DSC_CFG"`:
+Run ASC stack first, then DSC stack:
 Why: each stage consumes outputs from the previous stage for that stack.
 
 ```bash
-# Download plan (dry-run)
-mamba run -n isce3-feb python scripts/05_download_s1_stack.py --repo-root . --config "$ASC_CFG"
+# ASC: Download plan (dry-run)
+mamba run -n isce3-feb python scripts/05_download_s1_stack.py --repo-root . --config projects/edam_volendam/insar/edam_volendam_s1_asc_t000/config/processing_configuration.toml
 
-# Real download
-mamba run -n isce3-feb python scripts/05_download_s1_stack.py --repo-root . --config "$ASC_CFG" --download
+# ASC: Real download
+mamba run -n isce3-feb python scripts/05_download_s1_stack.py --repo-root . --config projects/edam_volendam/insar/edam_volendam_s1_asc_t000/config/processing_configuration.toml --download
 
-# DEM
-mamba run -n isce3-feb python scripts/06_download_dem_opentopography.py --repo-root . --config "$ASC_CFG"
+# ASC: DEM
+mamba run -n isce3-feb python scripts/06_download_dem_opentopography.py --repo-root . --config projects/edam_volendam/insar/edam_volendam_s1_asc_t000/config/processing_configuration.toml
 
-# COMPASS prepare/run
-mamba run -n isce3-feb python scripts/07_prepare_compass_stack.py --repo-root . --config "$ASC_CFG"
-mamba run -n isce3-feb python scripts/08_run_compass_runfiles.py --repo-root . --config "$ASC_CFG"
+# ASC: COMPASS prepare/run
+mamba run -n isce3-feb python scripts/07_prepare_compass_stack.py --repo-root . --config projects/edam_volendam/insar/edam_volendam_s1_asc_t000/config/processing_configuration.toml
+mamba run -n isce3-feb python scripts/08_run_compass_runfiles.py --repo-root . --config projects/edam_volendam/insar/edam_volendam_s1_asc_t000/config/processing_configuration.toml
 
-# Dolphin prepare/run
-mamba run -n isce3-feb python scripts/09_prepare_dolphin_workflow.py --repo-root . --config "$ASC_CFG"
-mamba run -n isce3-feb python scripts/11_run_dolphin_workflow.py --repo-root . --config "$ASC_CFG"
+# ASC: Dolphin prepare/run
+mamba run -n isce3-feb python scripts/09_prepare_dolphin_workflow.py --repo-root . --config projects/edam_volendam/insar/edam_volendam_s1_asc_t000/config/processing_configuration.toml
+mamba run -n isce3-feb python scripts/11_run_dolphin_workflow.py --repo-root . --config projects/edam_volendam/insar/edam_volendam_s1_asc_t000/config/processing_configuration.toml
 ```
 
-Repeat with `--config "$DSC_CFG"`.
+Then repeat the same six commands with:
+`projects/edam_volendam/insar/edam_volendam_s1_dsc_t000/config/processing_configuration.toml`
 
 ## 7) Decomposition (After Both Dolphin Runs)
 ```bash
 mamba run -n isce3-feb python scripts/90_decompose_los_velocity.py \
   --repo-root . \
-  --config "$ASC_CFG"
+  --config projects/edam_volendam/insar/edam_volendam_s1_asc_t000/config/processing_configuration.toml
 ```
 
-You can also pass `"$DSC_CFG"`; decomposition settings in both files are cross-wired to ASC+DSC velocity outputs.
+You can also pass:
+`projects/edam_volendam/insar/edam_volendam_s1_dsc_t000/config/processing_configuration.toml`
+Decomposition settings in both files are cross-wired to ASC+DSC velocity outputs.
 Naming note: `90_` is used for optional end-of-pipeline utilities, separate from core run-order stages.
 
 ## Troubleshooting
