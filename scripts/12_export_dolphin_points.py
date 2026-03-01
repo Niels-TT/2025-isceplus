@@ -696,7 +696,7 @@ def main() -> int:
 
     min_coh = float_cfg(export_cfg, "min_temporal_coherence", 0.6)
     use_ps_mask = bool_cfg(export_cfg, "use_ps_mask", False)
-    stride = int_cfg(export_cfg, "stride", 4)
+    stride = int_cfg(export_cfg, "stride", 1)
     max_points = int_cfg(export_cfg, "max_points", 80000)
     strict_grid_match = bool_cfg(export_cfg, "strict_grid_match", True)
     altitude_scale = float_cfg(export_cfg, "altitude_scale_m_per_mm_per_year", 3.0)

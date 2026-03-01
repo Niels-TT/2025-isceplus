@@ -240,7 +240,7 @@ ps_mask_file = "" # Optional PS mask raster; blank = auto-pick t*/PS/ps_pixels.t
 # Selection logic.
 min_temporal_coherence = 0.6 # Keep only points above this coherence threshold.
 use_ps_mask = false # Set true for PS-only export; false keeps valid PS/DS raster points.
-stride = 4 # Spatial decimation stride before export to control output volume.
+stride = 1 # Spatial decimation stride before export to control output volume.
 max_points = 80000 # Hard cap for export size (deterministic down-sampling if exceeded).
 strict_grid_match = true # Fail export when coherence/PS grids do not match velocity grid.
 
@@ -252,7 +252,7 @@ kmz_file = "miami/insar/us_isleofnormandy_s1_asc_t48/stack/dolphin/exports/veloc
 # KMZ styling / 3D behavior.
 name_prefix = "miami_dolphin" # Placemark name prefix.
 altitude_scale_m_per_mm_per_year = 3.0 # 3D height scale in meters per mm/yr (relativeToGround).
-color_clip_abs_mm_per_year = 30.0 # Velocity color scale clip (+/- mm/yr) for consistent legend behavior.
+color_clip_abs_mm_per_year = 10.0 # Velocity color scale clip (+/- mm/yr) for consistent legend behavior.
 kmz_compact_mode = true # Group points into a small number of KML features to keep Google Earth Pro stable.
 kmz_compact_color_bins = 32 # Number of color groups used in compact mode (higher = finer color detail).
 kmz_compact_max_points_per_placemark = 5000 # Split very large groups to avoid oversized KML features.

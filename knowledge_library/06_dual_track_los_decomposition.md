@@ -16,6 +16,7 @@ This is still scientifically valid when geometry and masking are handled careful
 4. LOS projection coefficients for each track:
    - `los_east_coeff`
    - `los_up_coeff`
+   - Recommended: set both to `"auto"` to derive from COMPASS incidence/heading rasters.
 
 Model per pixel:
 - `v_los_asc = a_e * v_east + a_u * v_up`
@@ -27,6 +28,10 @@ The script solves this 2x2 system for `v_east` and `v_up`.
 Use `[processing.decomposition]` and track tables:
 - `[processing.decomposition.track_asc]`
 - `[processing.decomposition.track_dsc]`
+
+Coefficient mode:
+- Auto: set both `los_east_coeff = "auto"` and `los_up_coeff = "auto"` for each track.
+- Manual: provide both as numeric values.
 
 Key controls:
 - `enabled`: master switch

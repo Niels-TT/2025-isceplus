@@ -253,7 +253,7 @@ ps_mask_file = "" # Optional PS mask raster; blank = auto-pick t*/PS/ps_pixels.t
 # Selection logic.
 min_temporal_coherence = 0.6 # Keep only points above this coherence threshold.
 use_ps_mask = false # Set true for PS-only export; false keeps valid PS/DS raster points.
-stride = 4 # Spatial decimation stride before export to control output volume.
+stride = 1 # Spatial decimation stride before export to control output volume.
 max_points = 80000 # Hard cap for export size (deterministic down-sampling if exceeded).
 strict_grid_match = true # Fail export when coherence/PS grids do not match velocity grid.
 
@@ -265,13 +265,13 @@ kmz_file = "projects/edam_volendam/insar/edam_volendam_s1_dsc_t000/stack/dolphin
 # KMZ styling / 3D behavior.
 name_prefix = "edam_volendam_dolphin" # Placemark name prefix.
 altitude_scale_m_per_mm_per_year = 3.0 # 3D height scale in meters per mm/yr (relativeToGround).
-color_clip_abs_mm_per_year = 30.0 # Velocity color scale clip (+/- mm/yr) for consistent legend behavior.
+color_clip_abs_mm_per_year = 10.0 # Velocity color scale clip (+/- mm/yr) for consistent legend behavior.
 kmz_compact_mode = true # Group points into a small number of KML features to keep Google Earth Pro stable.
 kmz_compact_color_bins = 32 # Number of color groups used in compact mode (higher = finer color detail).
 kmz_compact_max_points_per_placemark = 5000 # Split very large groups to avoid oversized KML features.
 kmz_use_network_links = true # MintPy-style regionated KMZ: load only visible point tiles on demand.
 kmz_region_target_points = 2000 # Approximate points per region KML tile for network-link mode.
-kmz_region_min_lod_pixels = 0 # Google Earth LOD threshold before a region tile is loaded (0 = load regardless of zoom).
+kmz_region_min_lod_pixels = 128 # Google Earth LOD threshold before a region tile is loaded.
 
 [processing.dolphin.raster_viz]
 # Quicklook raster visualization exports (for fast inspection).
@@ -294,9 +294,9 @@ legend_height_px = 40 # Embedded legend height in KMZ.
 [processing.decomposition]
 # Dual-geometry LOS decomposition (ASC + DSC velocity -> East + Up).
 enabled = true # Set true only after both ASC and DSC Dolphin velocity rasters exist.
-run_after_dolphin = false # Optional auto-run at end of 11_run_dolphin_workflow.py.
+run_after_dolphin = true # Optional auto-run at end of 11_run_dolphin_workflow.py.
 output_dir = "projects/edam_volendam/insar/edam_volendam_s1_dsc_t000/stack/decomposition"
-target_grid = "dsc" # Grid on which outputs are written: asc or dsc.
+target_grid = "asc" # Grid on which outputs are written: asc or dsc.
 min_temporal_coherence = 0.6 # Applied when coherence rasters are provided.
 max_condition_number = 50.0 # Geometry guard; lower is stricter.
 write_consistency_error = true # Writes residual LOS reconstruction error raster.
@@ -307,12 +307,12 @@ coherence_resampling = "bilinear" # Resampling for cross-track coherence reproje
 name = "edam_volendam_asc"
 velocity_file = "projects/edam_volendam/insar/edam_volendam_s1_asc_t000/stack/dolphin/timeseries/velocity.tif" # In dual-track setup, point to ASC stack velocity.
 coherence_file = "" # Optional; if blank, decomposition runs without coherence thresholding.
-los_east_coeff = -0.62 # Replace with ASC east projection coefficient for your chosen geometry.
-los_up_coeff = 0.78 # Replace with ASC up projection coefficient for your chosen geometry.
+los_east_coeff = "auto" # Use "auto" to derive from COMPASS incidence/heading rasters.
+los_up_coeff = "auto" # Set both coefficients to "auto" or both numeric.
 
 [processing.decomposition.track_dsc]
 name = "edam_volendam_dsc"
 velocity_file = "projects/edam_volendam/insar/edam_volendam_s1_dsc_t000/stack/dolphin/timeseries/velocity.tif" # In dual-track setup, point to DSC stack velocity.
 coherence_file = "" # Optional descending coherence raster.
-los_east_coeff = 0.62 # Replace with DSC east projection coefficient.
-los_up_coeff = 0.78 # Replace with DSC up projection coefficient.
+los_east_coeff = "auto" # Use "auto" to derive from COMPASS incidence/heading rasters.
+los_up_coeff = "auto" # Set both coefficients to "auto" or both numeric.

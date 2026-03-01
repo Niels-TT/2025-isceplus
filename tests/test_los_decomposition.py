@@ -44,6 +44,10 @@ class LOSDecompositionTests(unittest.TestCase):
         with rasterio.open(path, "w", **profile) as ds:
             ds.write(arr.astype(np.float32), 1)
 
+    def _write_geometry_raster(self, path: Path, arr: np.ndarray) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self._write_raster(path, arr)
+
     def test_matrix_diagnostics_invertible(self) -> None:
         inv, det, cond = self.decomp.matrix_diagnostics(-0.62, 0.78, 0.62, 0.78)
         self.assertNotEqual(det, 0.0)
@@ -145,6 +149,120 @@ class LOSDecompositionTests(unittest.TestCase):
             self.assertEqual(int(valid[0, 0]), 0)
             np.testing.assert_allclose(east_est[1:, 1:], east_true[1:, 1:], rtol=1e-5, atol=1e-7)
             np.testing.assert_allclose(up_est[1:, 1:], up_true[1:, 1:], rtol=1e-5, atol=1e-7)
+
+    def test_parse_config_auto_coefficients_from_compass_geometry(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            arr = np.ones((8, 8), dtype=np.float32)
+
+            asc_vel = root / "asc_stack" / "stack" / "dolphin" / "timeseries" / "velocity.tif"
+            dsc_vel = root / "dsc_stack" / "stack" / "dolphin" / "timeseries" / "velocity.tif"
+            asc_vel.parent.mkdir(parents=True, exist_ok=True)
+            dsc_vel.parent.mkdir(parents=True, exist_ok=True)
+            self._write_raster(asc_vel, arr)
+            self._write_raster(dsc_vel, arr)
+
+            asc_inc = np.full((8, 8), 40.0, dtype=np.float32)
+            asc_az = np.full((8, 8), 100.0, dtype=np.float32)
+            dsc_inc = np.full((8, 8), 35.0, dtype=np.float32)
+            dsc_az = np.full((8, 8), -100.0, dtype=np.float32)
+
+            self._write_geometry_raster(
+                root
+                / "asc_stack"
+                / "stack"
+                / "compass"
+                / "scratch"
+                / "t000_000000_iw1"
+                / "20230101"
+                / "corrections"
+                / "incidence_angle.tif",
+                asc_inc,
+            )
+            self._write_geometry_raster(
+                root
+                / "asc_stack"
+                / "stack"
+                / "compass"
+                / "scratch"
+                / "t000_000000_iw1"
+                / "20230101"
+                / "corrections"
+                / "heading_angle.tif",
+                asc_az,
+            )
+            self._write_geometry_raster(
+                root
+                / "dsc_stack"
+                / "stack"
+                / "compass"
+                / "scratch"
+                / "t000_000001_iw1"
+                / "20230101"
+                / "corrections"
+                / "incidence_angle.tif",
+                dsc_inc,
+            )
+            self._write_geometry_raster(
+                root
+                / "dsc_stack"
+                / "stack"
+                / "compass"
+                / "scratch"
+                / "t000_000001_iw1"
+                / "20230101"
+                / "corrections"
+                / "heading_angle.tif",
+                dsc_az,
+            )
+
+            config = root / "config.toml"
+            config.write_text(
+                "\n".join(
+                    [
+                        "[processing.decomposition]",
+                        "enabled = true",
+                        "output_dir = 'decomp'",
+                        "target_grid = 'asc'",
+                        "min_temporal_coherence = 0.0",
+                        "max_condition_number = 100.0",
+                        "write_consistency_error = false",
+                        "velocity_resampling = 'bilinear'",
+                        "coherence_resampling = 'bilinear'",
+                        "",
+                        "[processing.decomposition.track_asc]",
+                        "name = 'asc'",
+                        "velocity_file = 'asc_stack/stack/dolphin/timeseries/velocity.tif'",
+                        "coherence_file = ''",
+                        "los_east_coeff = 'auto'",
+                        "los_up_coeff = 'auto'",
+                        "",
+                        "[processing.decomposition.track_dsc]",
+                        "name = 'dsc'",
+                        "velocity_file = 'dsc_stack/stack/dolphin/timeseries/velocity.tif'",
+                        "coherence_file = ''",
+                        "los_east_coeff = 'auto'",
+                        "los_up_coeff = 'auto'",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            cfg = self.decomp.parse_config(repo_root=root, config_path=config)
+
+            asc_expected_east = float(-np.sin(np.deg2rad(40.0)) * np.sin(np.deg2rad(100.0)))
+            asc_expected_up = float(np.cos(np.deg2rad(40.0)))
+            dsc_expected_east = float(-np.sin(np.deg2rad(35.0)) * np.sin(np.deg2rad(-100.0)))
+            dsc_expected_up = float(np.cos(np.deg2rad(35.0)))
+
+            self.assertEqual(cfg.asc.los_coeff_source, "auto_from_compass_geometry")
+            self.assertEqual(cfg.dsc.los_coeff_source, "auto_from_compass_geometry")
+            self.assertIsNotNone(cfg.asc.los_coeff_details)
+            self.assertIsNotNone(cfg.dsc.los_coeff_details)
+            self.assertAlmostEqual(cfg.asc.los_east_coeff, asc_expected_east, places=6)
+            self.assertAlmostEqual(cfg.asc.los_up_coeff, asc_expected_up, places=6)
+            self.assertAlmostEqual(cfg.dsc.los_east_coeff, dsc_expected_east, places=6)
+            self.assertAlmostEqual(cfg.dsc.los_up_coeff, dsc_expected_up, places=6)
 
 
 if __name__ == "__main__":

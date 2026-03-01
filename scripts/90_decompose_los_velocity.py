@@ -3,7 +3,7 @@
 
 Technical summary:
     Loads two LOS velocity products (ascending + descending), aligns them to a
-    common grid, solves a 2x2 system per pixel using user-provided LOS
+    common grid, solves a 2x2 system per pixel using manual or auto-derived LOS
     projection coefficients, and writes East/Up rasters plus QC artifacts.
 
 Why:
@@ -41,6 +41,8 @@ class TrackConfig:
     coherence_file: Path | None
     los_east_coeff: float
     los_up_coeff: float
+    los_coeff_source: str
+    los_coeff_details: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -139,13 +141,12 @@ def parse_track(
     if coherence_file is not None and not coherence_file.exists():
         raise FileNotFoundError(f"Missing coherence raster: {coherence_file}")
 
-    if "los_east_coeff" not in section or "los_up_coeff" not in section:
-        raise ValueError(
-            f"processing.decomposition.track_{section_name} requires "
-            "los_east_coeff and los_up_coeff."
-        )
-    los_east_coeff = float(section["los_east_coeff"])
-    los_up_coeff = float(section["los_up_coeff"])
+    los_east_coeff, los_up_coeff, source, details = resolve_los_coefficients(
+        repo_root=repo_root,
+        section=section,
+        section_name=section_name,
+        velocity_file=velocity_file,
+    )
 
     return TrackConfig(
         name=name,
@@ -153,7 +154,196 @@ def parse_track(
         coherence_file=coherence_file,
         los_east_coeff=los_east_coeff,
         los_up_coeff=los_up_coeff,
+        los_coeff_source=source,
+        los_coeff_details=details,
     )
+
+
+def resolve_los_coefficients(
+    *,
+    repo_root: Path,
+    section: dict[str, Any],
+    section_name: str,
+    velocity_file: Path,
+) -> tuple[float, float, str, dict[str, Any] | None]:
+    """Resolve LOS coefficients from config or auto-derive from COMPASS geometry."""
+    has_east = "los_east_coeff" in section
+    has_up = "los_up_coeff" in section
+
+    if has_east != has_up:
+        raise ValueError(
+            f"processing.decomposition.track_{section_name} must provide both "
+            "los_east_coeff and los_up_coeff, or omit both for auto mode."
+        )
+
+    if has_east and has_up:
+        east_raw = section["los_east_coeff"]
+        up_raw = section["los_up_coeff"]
+
+        east_auto = isinstance(east_raw, str) and east_raw.strip().lower() == "auto"
+        up_auto = isinstance(up_raw, str) and up_raw.strip().lower() == "auto"
+        if east_auto or up_auto:
+            if not (east_auto and up_auto):
+                raise ValueError(
+                    f"processing.decomposition.track_{section_name} must set both "
+                    "los_east_coeff and los_up_coeff to 'auto' when using auto mode."
+                )
+            return estimate_los_coefficients_from_compass_geometry(
+                repo_root=repo_root,
+                section_name=section_name,
+                velocity_file=velocity_file,
+            )
+
+        try:
+            east = float(east_raw)
+            up = float(up_raw)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"processing.decomposition.track_{section_name} has invalid LOS coefficients. "
+                "Use numeric values or set both to 'auto'."
+            ) from exc
+        return east, up, "manual", None
+
+    # Auto mode when both keys are omitted.
+    return estimate_los_coefficients_from_compass_geometry(
+        repo_root=repo_root,
+        section_name=section_name,
+        velocity_file=velocity_file,
+    )
+
+
+def estimate_los_coefficients_from_compass_geometry(
+    *,
+    repo_root: Path,
+    section_name: str,
+    velocity_file: Path,
+) -> tuple[float, float, str, dict[str, Any]]:
+    """Estimate LOS East/Up coefficients from COMPASS scratch geometry rasters.
+
+    The formulas follow COMPASS/MintPy ENU->LOS convention:
+      v_los = v_e * (-sin(inc)*sin(az)) + v_n*(sin(inc)*cos(az)) + v_u*cos(inc)
+    where az is LOS azimuth angle (degrees) measured from north with
+    anti-clockwise positive. The heading rasters produced by COMPASS rdr2geo
+    provide this LOS azimuth convention.
+    """
+    stack_root = infer_stack_root_from_velocity(velocity_file)
+    scratch_dir = stack_root / "stack" / "compass" / "scratch"
+    if not scratch_dir.exists():
+        raise FileNotFoundError(
+            f"processing.decomposition.track_{section_name}: auto LOS coefficient mode "
+            f"requires COMPASS geometry under {scratch_dir}. "
+            "Run COMPASS first, or set manual los_east_coeff/los_up_coeff."
+        )
+
+    all_pairs = list_compass_geometry_pairs(scratch_dir)
+    if not all_pairs:
+        raise FileNotFoundError(
+            f"processing.decomposition.track_{section_name}: auto LOS coefficient mode found "
+            f"no geometry pairs under {scratch_dir}. "
+            "Expected corrections/incidence_angle.tif + heading_angle.tif files."
+        )
+
+    sampled_pairs = sample_pairs_evenly(all_pairs, max_samples=24)
+    incidence_medians: list[float] = []
+    azimuth_medians: list[float] = []
+    for inc_path, az_path in sampled_pairs:
+        incidence_medians.append(read_raster_median(inc_path))
+        azimuth_medians.append(read_raster_median(az_path))
+
+    incidence_deg = float(np.nanmedian(np.asarray(incidence_medians, dtype=np.float64)))
+    azimuth_deg = circular_mean_deg(azimuth_medians)
+
+    inc_rad = np.deg2rad(incidence_deg)
+    az_rad = np.deg2rad(azimuth_deg)
+    east = float(-np.sin(inc_rad) * np.sin(az_rad))
+    north = float(np.sin(inc_rad) * np.cos(az_rad))
+    up = float(np.cos(inc_rad))
+
+    details: dict[str, Any] = {
+        "mode": "auto_from_compass_geometry",
+        "track": section_name,
+        "repo_root": str(repo_root),
+        "stack_root": str(stack_root),
+        "scratch_dir": str(scratch_dir),
+        "file_pair_count_total": len(all_pairs),
+        "file_pair_count_sampled": len(sampled_pairs),
+        "incidence_median_deg": incidence_deg,
+        "los_azimuth_median_deg": azimuth_deg,
+        "north_coeff_diagnostic": north,
+        "sample_incidence_files": [str(p[0]) for p in sampled_pairs[:5]],
+        "sample_azimuth_files": [str(p[1]) for p in sampled_pairs[:5]],
+    }
+    return east, up, "auto_from_compass_geometry", details
+
+
+def infer_stack_root_from_velocity(velocity_file: Path) -> Path:
+    """Infer stack root path from the Dolphin velocity raster path."""
+    v = velocity_file.resolve()
+
+    # Canonical stack layout: <stack_root>/stack/dolphin/timeseries/velocity.tif
+    if (
+        v.name == "velocity.tif"
+        and v.parent.name == "timeseries"
+        and v.parent.parent.name == "dolphin"
+        and v.parent.parent.parent.name == "stack"
+    ):
+        return v.parent.parent.parent.parent
+
+    # Fallback: find any ancestor that contains stack/compass/scratch.
+    for ancestor in v.parents:
+        if (ancestor / "stack" / "compass" / "scratch").exists():
+            return ancestor
+
+    raise ValueError(
+        "Unable to infer stack root from velocity raster path. "
+        f"Expected .../stack/dolphin/timeseries/velocity.tif, got {v}"
+    )
+
+
+def list_compass_geometry_pairs(scratch_dir: Path) -> list[tuple[Path, Path]]:
+    """List incidence/azimuth geometry raster pairs from COMPASS scratch directory."""
+    pairs: list[tuple[Path, Path]] = []
+    for inc in sorted(scratch_dir.rglob("corrections/incidence_angle.tif")):
+        az = inc.with_name("heading_angle.tif")
+        if az.exists():
+            pairs.append((inc, az))
+    return pairs
+
+
+def sample_pairs_evenly(
+    pairs: list[tuple[Path, Path]],
+    *,
+    max_samples: int,
+) -> list[tuple[Path, Path]]:
+    """Downsample file pairs while preserving temporal/burst spread."""
+    if len(pairs) <= max_samples:
+        return pairs
+    idx = np.linspace(0, len(pairs) - 1, num=max_samples, dtype=np.float64)
+    keep = sorted({int(round(i)) for i in idx})
+    return [pairs[i] for i in keep]
+
+
+def read_raster_median(path: Path) -> float:
+    """Read one-band raster and return median over finite, non-nodata pixels."""
+    with rasterio.open(path) as ds:
+        arr = ds.read(1)
+        nodata = ds.nodata
+    valid = np.isfinite(arr)
+    if nodata is not None and np.isfinite(nodata):
+        valid &= arr != nodata
+    if not np.any(valid):
+        raise ValueError(f"Geometry raster has no valid values: {path}")
+    return float(np.nanmedian(arr[valid]))
+
+
+def circular_mean_deg(values: list[float]) -> float:
+    """Compute circular mean for angles in degrees."""
+    if not values:
+        raise ValueError("Cannot compute circular mean of empty angle list.")
+    rad = np.deg2rad(np.asarray(values, dtype=np.float64))
+    s = float(np.mean(np.sin(rad)))
+    c = float(np.mean(np.cos(rad)))
+    return float(np.rad2deg(np.arctan2(s, c)))
 
 
 def parse_config(repo_root: Path, config_path: Path) -> DecompositionConfig:
@@ -318,6 +508,12 @@ def run_decomposition(
     print(f"DSC velocity: {cfg.dsc.velocity_file}")
     print(f"ASC coherence: {cfg.asc.coherence_file}")
     print(f"DSC coherence: {cfg.dsc.coherence_file}")
+    print(
+        "LOS coefficient source: "
+        f"asc={cfg.asc.los_coeff_source}, dsc={cfg.dsc.los_coeff_source}"
+    )
+    print_track_coeff_details("ASC", cfg.asc)
+    print_track_coeff_details("DSC", cfg.dsc)
     print(
         "LOS coefficients: "
         f"asc(e={cfg.asc.los_east_coeff:.6f}, u={cfg.asc.los_up_coeff:.6f}), "
@@ -506,6 +702,8 @@ def run_decomposition(
             "coherence_file": str(cfg.asc.coherence_file) if cfg.asc.coherence_file else None,
             "los_east_coeff": cfg.asc.los_east_coeff,
             "los_up_coeff": cfg.asc.los_up_coeff,
+            "los_coeff_source": cfg.asc.los_coeff_source,
+            "los_coeff_details": cfg.asc.los_coeff_details,
         },
         "dsc": {
             "name": cfg.dsc.name,
@@ -513,6 +711,8 @@ def run_decomposition(
             "coherence_file": str(cfg.dsc.coherence_file) if cfg.dsc.coherence_file else None,
             "los_east_coeff": cfg.dsc.los_east_coeff,
             "los_up_coeff": cfg.dsc.los_up_coeff,
+            "los_coeff_source": cfg.dsc.los_coeff_source,
+            "los_coeff_details": cfg.dsc.los_coeff_details,
         },
         "matrix": {
             "determinant": determinant,
@@ -547,6 +747,26 @@ def run_decomposition(
     print(f"Up velocity: {up_out}")
     print(f"Summary: {summary_out}")
     return 0
+
+
+def print_track_coeff_details(label: str, track: TrackConfig) -> None:
+    """Emit concise terminal diagnostics for auto-derived coefficients."""
+    if not track.los_coeff_details:
+        return
+    details = track.los_coeff_details
+    incidence = details.get("incidence_median_deg")
+    azimuth = details.get("los_azimuth_median_deg")
+    sampled = details.get("file_pair_count_sampled")
+    total = details.get("file_pair_count_total")
+    if incidence is None or azimuth is None:
+        print(f"{label} auto-coeff diagnostics: unavailable.")
+        return
+    print(
+        f"{label} auto-coeff diagnostics: "
+        f"incidence_med={incidence:.3f} deg, "
+        f"los_azimuth_med={azimuth:.3f} deg, "
+        f"sampled_pairs={sampled}/{total}"
+    )
 
 
 def main() -> int:
