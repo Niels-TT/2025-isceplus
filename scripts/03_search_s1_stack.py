@@ -3,8 +3,8 @@
 
 Technical summary:
     Reads stack config, converts KML AOI to WKT, queries ASF with orbit/date
-    constraints, applies local selection policy, and writes products
-    (`scene_names.txt`, `scenes.csv`, `summary.json`, filtered GeoJSON, WKT).
+    constraints, and writes products (`scene_names.txt`, `scenes.csv`,
+    `summary.json`, filtered GeoJSON, WKT).
 
 Why:
     Freezes a reproducible scene list before large downloads and preprocessing.
@@ -23,7 +23,8 @@ import asf_search as asf
 
 from stack_common import (
     DEFAULT_STACK_CONFIG_REL,
-    parse_kml_to_wkt,
+    buffered_kml_to_wkt,
+    read_aoi_buffer_m,
     read_toml,
     resolve_path,
     resolve_stack_config,
@@ -48,6 +49,20 @@ def asf_enum(enum_obj, value: str, field_name: str):
         return getattr(enum_obj, value)
     except AttributeError as exc:
         raise ValueError(f"Invalid {field_name} value: {value}") from exc
+
+
+def parse_optional_int(value: object, field_name: str, default: int = 0) -> int:
+    """Parse optional integer config values with empty-as-default behavior."""
+    text = "" if value is None else str(value).strip()
+    if not text:
+        return default
+    try:
+        parsed = int(text)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Invalid {field_name}: expected integer, got {value!r}") from exc
+    if parsed < 0:
+        raise ValueError(f"Invalid {field_name}: must be >= 0, got {parsed}")
+    return parsed
 
 
 def write_scene_csv(path: Path, results: Iterable) -> None:
@@ -79,56 +94,6 @@ def write_scene_csv(path: Path, results: Iterable) -> None:
         for item in results:
             props = item.properties
             writer.writerow({col: props.get(col, "") for col in columns})
-
-
-def apply_selection_policy(results: list, selection_cfg: dict, reference_date: str) -> tuple[list, list[str]]:
-    """Apply date-selection policy to full search results.
-
-    Args:
-        results: All ASF results sorted by start time.
-        selection_cfg: Selection config from TOML.
-        reference_date: Reference date in YYYY-MM-DD format.
-
-    Returns:
-        Tuple of (selected results, selected unique dates).
-
-    Raises:
-        ValueError: If selection mode or parameters are invalid.
-    """
-    mode = selection_cfg.get("mode", "none")
-    max_dates = int(selection_cfg.get("max_dates", 0))
-    require_reference = bool(selection_cfg.get("require_reference", True))
-
-    if mode == "none":
-        unique_dates = sorted({item.properties["startTime"][:10] for item in results})
-        return results, unique_dates
-
-    if mode != "first_n_from_reference":
-        raise ValueError(f"Unsupported selection.mode: {mode}")
-    if max_dates <= 0:
-        raise ValueError("selection.max_dates must be > 0 for first_n_from_reference")
-
-    all_dates = sorted({item.properties["startTime"][:10] for item in results})
-    if require_reference and reference_date not in all_dates:
-        raise ValueError(
-            f"Reference date {reference_date} not found in search results. "
-            "Choose another reference_date or broaden search constraints."
-        )
-
-    selected_dates = [d for d in all_dates if d >= reference_date][:max_dates]
-    if len(selected_dates) < max_dates:
-        print(
-            f"Warning: requested {max_dates} dates from {reference_date}, "
-            f"but only {len(selected_dates)} are available.",
-            file=sys.stderr,
-        )
-
-    selected_set = set(selected_dates)
-    selected_results = [
-        item for item in results if item.properties["startTime"][:10] in selected_set
-    ]
-
-    return selected_results, selected_dates
 
 
 def filter_geojson(full_geojson: dict, selected_scene_names: set[str]) -> dict:
@@ -195,12 +160,12 @@ def main() -> int:
 
     cfg = read_toml(config_path)
     search_cfg = cfg["search"]
-    selection_cfg = cfg.get("selection", {"mode": "none"})
     aoi_cfg = cfg["aoi"]
     out_cfg = cfg["outputs"]
 
     kml_path = resolve_path(repo_root, aoi_cfg["kml"])
-    wkt = parse_kml_to_wkt(kml_path)
+    aoi_buffer_m = read_aoi_buffer_m(cfg)
+    wkt = buffered_kml_to_wkt(kml_path, aoi_buffer_m)
 
     platform = asf_enum(asf.PLATFORM, search_cfg["platform"], "platform")
     processing_level = asf_enum(
@@ -210,7 +175,16 @@ def main() -> int:
     flight_direction = asf_enum(
         asf.FLIGHT_DIRECTION, search_cfg["flight_direction"], "flight_direction"
     )
-    relative_orbit = int(search_cfg["relative_orbit"])
+    try:
+        relative_orbit = parse_optional_int(search_cfg["relative_orbit"], "search.relative_orbit")
+        frame_number = parse_optional_int(
+            search_cfg.get("frame_number", 0),
+            "search.frame_number",
+            default=0,
+        )
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
 
     search_results = asf.search(
         platform=[platform],
@@ -225,13 +199,17 @@ def main() -> int:
     all_results_sorted = sorted(
         search_results, key=lambda item: item.properties.get("startTime", "")
     )
+    if frame_number > 0:
+        all_results_sorted = [
+            item
+            for item in all_results_sorted
+            if str(item.properties.get("frameNumber", "")).strip().isdigit()
+            and int(str(item.properties.get("frameNumber", "")).strip()) == frame_number
+        ]
     full_unique_dates = sorted({item.properties["startTime"][:10] for item in all_results_sorted})
 
-    results, selected_dates = apply_selection_policy(
-        all_results_sorted,
-        selection_cfg,
-        search_cfg["reference_date"],
-    )
+    results = all_results_sorted
+    selected_dates = full_unique_dates
     scene_names = [item.properties.get("sceneName", "") for item in results]
 
     out_root = resolve_path(repo_root, out_cfg["root"])
@@ -265,6 +243,7 @@ def main() -> int:
     summary = {
         "stack_name": cfg["project"]["name"],
         "aoi_kml": str(kml_path),
+        "aoi_buffer_m": aoi_buffer_m,
         "reference_date": search_cfg["reference_date"],
         "start": search_cfg["start"],
         "end": search_cfg["end"],
@@ -273,7 +252,8 @@ def main() -> int:
         "beam_mode": search_cfg["beam_mode"],
         "flight_direction": search_cfg["flight_direction"],
         "relative_orbit": relative_orbit,
-        "selection_mode": selection_cfg.get("mode", "none"),
+        "frame_number": frame_number or None,
+        "selection_mode": "all_from_start_end",
         "selected_scene_count": len(results),
         "selected_unique_date_count": len(selected_dates),
         "selected_first_date": selected_dates[0] if selected_dates else None,
@@ -287,19 +267,31 @@ def main() -> int:
     }
     summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
 
-    expected_scenes = int(search_cfg.get("expected_scenes", len(results)))
-    expected_dates = int(search_cfg.get("expected_unique_dates", len(selected_dates)))
-    scene_ok = len(results) == expected_scenes
-    date_ok = len(selected_dates) == expected_dates
+    expected_scenes = int(search_cfg.get("expected_scenes", 0))
+    expected_dates = int(search_cfg.get("expected_unique_dates", 0))
+    check_scene_count = expected_scenes > 0
+    check_date_count = expected_dates > 0
+    scene_ok = (not check_scene_count) or len(results) == expected_scenes
+    date_ok = (not check_date_count) or len(selected_dates) == expected_dates
+
+    expected_scene_label = str(expected_scenes) if check_scene_count else "disabled (0)"
+    expected_date_label = str(expected_dates) if check_date_count else "disabled (0)"
 
     print(f"Config: {config_path}")
     print(f"AOI: {kml_path}")
+    print(f"AOI search buffer: {aoi_buffer_m:.1f} m")
     print(
-        f"Selected scenes: {len(results)} (expected {expected_scenes})"
+        "Date filter: start/end only "
+        f"({search_cfg['start']} -> {search_cfg['end']}); reference_date is not used in search."
+    )
+    print(f"Geometry filter: {search_cfg['flight_direction']} orbit {relative_orbit}"
+          + (f" frame {frame_number}" if frame_number > 0 else " (all frames)"))
+    print(
+        f"Selected scenes: {len(results)} (expected {expected_scene_label})"
         f" | Full matches: {len(all_results_sorted)}"
     )
     print(
-        f"Selected dates: {len(selected_dates)} (expected {expected_dates})"
+        f"Selected dates: {len(selected_dates)} (expected {expected_date_label})"
         f" | Date span: {summary['selected_first_date']} -> {summary['selected_last_date']}"
     )
     print(f"Selected volume: {summary['selected_total_gb_decimal']} GB (decimal)")

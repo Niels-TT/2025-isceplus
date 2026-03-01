@@ -29,7 +29,7 @@ mamba run -n isce3-feb python scripts/02_discover_s1_candidates.py \
 Discovery outputs include:
 - `search/candidates/geometry_candidates.csv`
 - `search/candidates/geometry_candidates.json`
-- `search/candidates/geometry_candidates_map.png` (AOI vs stack footprints)
+- `search/candidates/stack_candidates.png` (AOI vs stack footprints)
 
 Then optionally validate in ASF Vertex.
 

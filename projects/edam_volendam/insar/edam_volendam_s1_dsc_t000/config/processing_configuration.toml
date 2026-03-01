@@ -1,30 +1,43 @@
+[template]
+# Replace placeholders after copying or use:
+#   python scripts/01_create_project_from_example.py --project-name <name>
+# Placeholders:
+# - projects/edam_volendam -> project folder path (for example projects/my_city)
+# - edam_volendam_s1_dsc_t000   -> stack folder name under insar/
+# - edam_volendam -> short project identifier used in product labels
+# - edam_volendam    -> descriptive site label
+
 [project]
-name = "us_isleofnormandy_s1_asc_t48"
-site = "miami_isle_of_normandy"
+name = "edam_volendam_s1_dsc_t000"
+site = "edam_volendam"
 
 [aoi]
-kml = "miami/aux/bbox.kml"
+kml = "projects/edam_volendam/aux/bbox.kml"
 buffer_m = 3000.0 # Processing/search buffer around project AOI in meters.
 
 [search]
 platform = "SENTINEL1"
 processing_level = "SLC"
 beam_mode = "IW"
-flight_direction = "ASCENDING"
-relative_orbit = 48
-start = "2015-09-21"
-end = "2022-04-30"
-reference_date = "2015-09-21"
-expected_scenes = 20
-expected_unique_dates = 20
+flight_direction = "DESCENDING" # One stack = one direction (ASCENDING or DESCENDING).
+# Set using scripts/02_discover_s1_candidates.py before running stack search.
+relative_orbit = 110
+frame_number = 419
+start = "2022-10-30"
+end = "2023-04-25"
+# Replace after first search + scripts/04_suggest_reference_date.py.
+reference_date = "2022-11-12"
+# Optional count guards (0 disables check; >0 enforces exact expected counts).
+expected_scenes = 0
+expected_unique_dates = 0
 
 [selection]
 mode = "first_n_from_reference"
-max_dates = 20
-require_reference = true
+max_dates = 30
+require_reference = false
 
 [outputs]
-root = "miami/insar/us_isleofnormandy_s1_asc_t48/search"
+root = "projects/edam_volendam/insar/edam_volendam_s1_dsc_t000/search"
 scene_list = "products/scene_names.txt"
 metadata_csv = "products/scenes.csv"
 summary_json = "products/summary.json"
@@ -32,20 +45,20 @@ geojson = "raw/results.geojson"
 wkt = "raw/aoi.wkt"
 
 [storage]
-slc_dir = "miami/insar/us_isleofnormandy_s1_asc_t48/stack/slc"
-download_manifest = "miami/insar/us_isleofnormandy_s1_asc_t48/stack/download_manifest.json"
+slc_dir = "projects/edam_volendam/insar/edam_volendam_s1_dsc_t000/stack/slc"
+download_manifest = "projects/edam_volendam/insar/edam_volendam_s1_dsc_t000/stack/download_manifest.json"
 
 [ancillary.dem]
-file = "miami/insar/us_isleofnormandy_s1_asc_t48/stack/dem/opentopo_srtm_gl1_ellip.tif"
+file = "projects/edam_volendam/insar/edam_volendam_s1_dsc_t000/stack/dem/opentopo_srtm_gl1_ellip.tif"
 demtype = "SRTMGL1_E"
 vertical_datum = "WGS84_ELLIPSOID"
 require_ellipsoid_heights = true
 
 [processing.compass]
-work_dir = "miami/insar/us_isleofnormandy_s1_asc_t48/stack/compass"
-orbit_dir = "miami/insar/us_isleofnormandy_s1_asc_t48/stack/orbits"
-burst_db_file = "miami/insar/us_isleofnormandy_s1_asc_t48/stack/compass/opera-burst-bbox-only.sqlite3"
-logs_dir = "miami/insar/us_isleofnormandy_s1_asc_t48/logs/compass"
+work_dir = "projects/edam_volendam/insar/edam_volendam_s1_dsc_t000/stack/compass"
+orbit_dir = "projects/edam_volendam/insar/edam_volendam_s1_dsc_t000/stack/orbits"
+burst_db_file = "projects/edam_volendam/insar/edam_volendam_s1_dsc_t000/stack/compass/opera-burst-bbox-only.sqlite3"
+logs_dir = "projects/edam_volendam/insar/edam_volendam_s1_dsc_t000/logs/compass"
 common_bursts_only = true
 browse_image = false
 disable_hdf5_file_locking = true
@@ -57,10 +70,10 @@ corrections = true
 
 [processing.dolphin]
 # 0) Paths and reproducibility (resolved first by the prep wrapper).
-work_dir = "miami/insar/us_isleofnormandy_s1_asc_t48/stack/dolphin" # Root folder for Dolphin products.
-config_file = "miami/insar/us_isleofnormandy_s1_asc_t48/stack/dolphin/config/dolphin_config.yaml" # Generated YAML used by `dolphin run`.
-cslc_file_list = "miami/insar/us_isleofnormandy_s1_asc_t48/stack/dolphin/inputs/cslc_files.txt" # Deterministic list of validated CSLC inputs.
-reference_template_file = "miami/insar/us_isleofnormandy_s1_asc_t48/stack/dolphin/config/dolphin_config.reference.yaml" # Full default template from installed Dolphin.
+work_dir = "projects/edam_volendam/insar/edam_volendam_s1_dsc_t000/stack/dolphin" # Root folder for Dolphin products.
+config_file = "projects/edam_volendam/insar/edam_volendam_s1_dsc_t000/stack/dolphin/config/dolphin_config.yaml" # Generated YAML used by `dolphin run`.
+cslc_file_list = "projects/edam_volendam/insar/edam_volendam_s1_dsc_t000/stack/dolphin/inputs/cslc_files.txt" # Deterministic list of validated CSLC inputs.
+reference_template_file = "projects/edam_volendam/insar/edam_volendam_s1_dsc_t000/stack/dolphin/config/dolphin_config.reference.yaml" # Full default template from installed Dolphin.
 keep_paths_relative = false # Set true only when you need portable relative paths across machines.
 
 # 1) Input selection / AOI clipping (applied when generating Dolphin config).
@@ -141,7 +154,7 @@ allow_raw_extra_cli_args = false # Safety default: keep false and prefer option_
 # Note: keep wrapper-managed options in [processing.dolphin], not here.
 
 # Input and metadata options.
-# "log-file" = "miami/insar/us_isleofnormandy_s1_asc_t48/stack/dolphin/dolphin.log" # Override Dolphin log output location.
+# "log-file" = "projects/edam_volendam/insar/edam_volendam_s1_dsc_t000/stack/dolphin/dolphin.log" # Override Dolphin log output location.
 # "require-cslc-files" = true # Keep true for strict input checks; false only for debugging config generation.
 # "amplitude-dispersion-files" = ["/abs/path/amp_dispersion.tif"] # Reuse precomputed AD rasters.
 # "amplitude-mean-files" = ["/abs/path/amp_mean.tif"] # Reuse precomputed amplitude mean rasters.
@@ -221,8 +234,8 @@ allow_raw_extra_cli_args = false # Safety default: keep false and prefer option_
 [processing.dolphin.qc]
 # Intermediate quality-control visuals (generated at Dolphin prepare stage).
 enabled = true # Auto-create interferogram network PNG + JSON from prepared CSLC list.
-ifg_network_png = "miami/insar/us_isleofnormandy_s1_asc_t48/stack/dolphin/qc/ifg_network.png"
-ifg_network_summary_json = "miami/insar/us_isleofnormandy_s1_asc_t48/stack/dolphin/qc/ifg_network_summary.json"
+ifg_network_png = "projects/edam_volendam/insar/edam_volendam_s1_dsc_t000/stack/dolphin/qc/ifg_network.png"
+ifg_network_summary_json = "projects/edam_volendam/insar/edam_volendam_s1_dsc_t000/stack/dolphin/qc/ifg_network_summary.json"
 max_bandwidth_override = 0 # 0 means use processing.dolphin.max_bandwidth.
 max_temporal_baseline_days_override = 0 # 0 means use processing.dolphin.max_temporal_baseline (if set).
 
@@ -233,7 +246,7 @@ csv_enabled = true # Write tabular point output for downstream operations/BI.
 kmz_enabled = true # Write Google Earth Pro point layer (3D placemarks).
 
 # Inputs (leave blank to auto-discover from Dolphin outputs).
-velocity_file = "miami/insar/us_isleofnormandy_s1_asc_t48/stack/dolphin/timeseries/velocity.tif" # Source velocity raster (m/yr).
+velocity_file = "projects/edam_volendam/insar/edam_volendam_s1_dsc_t000/stack/dolphin/timeseries/velocity.tif" # Source velocity raster (m/yr).
 coherence_file = "" # Optional temporal coherence raster; blank = auto-pick latest.
 ps_mask_file = "" # Optional PS mask raster; blank = auto-pick t*/PS/ps_pixels.tif.
 
@@ -245,12 +258,12 @@ max_points = 80000 # Hard cap for export size (deterministic down-sampling if ex
 strict_grid_match = true # Fail export when coherence/PS grids do not match velocity grid.
 
 # Outputs.
-output_dir = "miami/insar/us_isleofnormandy_s1_asc_t48/stack/dolphin/exports" # Folder for CSV/KMZ outputs.
-csv_file = "miami/insar/us_isleofnormandy_s1_asc_t48/stack/dolphin/exports/velocity_points.csv" # Point table output.
-kmz_file = "miami/insar/us_isleofnormandy_s1_asc_t48/stack/dolphin/exports/velocity_points.kmz" # Google Earth output.
+output_dir = "projects/edam_volendam/insar/edam_volendam_s1_dsc_t000/stack/dolphin/exports" # Folder for CSV/KMZ outputs.
+csv_file = "projects/edam_volendam/insar/edam_volendam_s1_dsc_t000/stack/dolphin/exports/velocity_points.csv" # Point table output.
+kmz_file = "projects/edam_volendam/insar/edam_volendam_s1_dsc_t000/stack/dolphin/exports/velocity_points.kmz" # Google Earth output.
 
 # KMZ styling / 3D behavior.
-name_prefix = "miami_dolphin" # Placemark name prefix.
+name_prefix = "edam_volendam_dolphin" # Placemark name prefix.
 altitude_scale_m_per_mm_per_year = 3.0 # 3D height scale in meters per mm/yr (relativeToGround).
 color_clip_abs_mm_per_year = 30.0 # Velocity color scale clip (+/- mm/yr) for consistent legend behavior.
 
@@ -261,13 +274,13 @@ geotiff_enabled = true # Write colorized GeoTIFF for immediate use in QGIS.
 kmz_enabled = true # Write KMZ ground overlay + legend for Google Earth Pro.
 
 # Inputs and outputs.
-velocity_file = "miami/insar/us_isleofnormandy_s1_asc_t48/stack/dolphin/timeseries/velocity.tif" # Source velocity raster (m/yr).
-output_dir = "miami/insar/us_isleofnormandy_s1_asc_t48/stack/dolphin/exports" # Folder for raster viz outputs.
-colorized_tif = "miami/insar/us_isleofnormandy_s1_asc_t48/stack/dolphin/exports/velocity_colorized.tif" # RGBA georeferenced quicklook.
-kmz_file = "miami/insar/us_isleofnormandy_s1_asc_t48/stack/dolphin/exports/velocity_overlay.kmz" # Google Earth overlay KMZ.
+velocity_file = "projects/edam_volendam/insar/edam_volendam_s1_dsc_t000/stack/dolphin/timeseries/velocity.tif" # Source velocity raster (m/yr).
+output_dir = "projects/edam_volendam/insar/edam_volendam_s1_dsc_t000/stack/dolphin/exports" # Folder for raster viz outputs.
+colorized_tif = "projects/edam_volendam/insar/edam_volendam_s1_dsc_t000/stack/dolphin/exports/velocity_colorized.tif" # RGBA georeferenced quicklook.
+kmz_file = "projects/edam_volendam/insar/edam_volendam_s1_dsc_t000/stack/dolphin/exports/velocity_overlay.kmz" # Google Earth overlay KMZ.
 
 # Visualization controls.
-name_prefix = "miami_dolphin" # Product naming prefix for KMZ overlay metadata.
+name_prefix = "edam_volendam_dolphin" # Product naming prefix for KMZ overlay metadata.
 clip_abs_mm_per_year = 30.0 # Symmetric clip for diverging blue/white/red color ramp.
 legend_width_px = 512 # Embedded legend width in KMZ.
 legend_height_px = 40 # Embedded legend height in KMZ.
@@ -276,8 +289,8 @@ legend_height_px = 40 # Embedded legend height in KMZ.
 # Dual-geometry LOS decomposition (ASC + DSC velocity -> East + Up).
 enabled = false # Set true only after both ASC and DSC Dolphin velocity rasters exist.
 run_after_dolphin = false # Optional auto-run at end of 11_run_dolphin_workflow.py.
-output_dir = "miami/insar/us_isleofnormandy_s1_asc_t48/stack/decomposition"
-target_grid = "asc" # Grid on which outputs are written: asc or dsc.
+output_dir = "projects/edam_volendam/insar/edam_volendam_s1_dsc_t000/stack/decomposition"
+target_grid = "dsc" # Grid on which outputs are written: asc or dsc.
 min_temporal_coherence = 0.6 # Applied when coherence rasters are provided.
 max_condition_number = 50.0 # Geometry guard; lower is stricter.
 write_consistency_error = true # Writes residual LOS reconstruction error raster.
@@ -285,15 +298,15 @@ velocity_resampling = "bilinear" # Resampling for cross-track velocity reproject
 coherence_resampling = "bilinear" # Resampling for cross-track coherence reprojection.
 
 [processing.decomposition.track_asc]
-name = "asc_t048"
-velocity_file = "miami/insar/us_isleofnormandy_s1_asc_t48/stack/dolphin/timeseries/velocity.tif"
+name = "edam_volendam_asc"
+velocity_file = "projects/edam_volendam/insar/edam_volendam_s1_asc_t000/stack/dolphin/timeseries/velocity.tif" # In dual-track setup, point to ASC stack velocity.
 coherence_file = "" # Optional; if blank, decomposition runs without coherence thresholding.
-los_east_coeff = -0.62 # Approximate east projection coefficient for this geometry.
-los_up_coeff = 0.78 # Approximate up projection coefficient for this geometry.
+los_east_coeff = -0.62 # Replace with ASC east projection coefficient for your chosen geometry.
+los_up_coeff = 0.78 # Replace with ASC up projection coefficient for your chosen geometry.
 
 [processing.decomposition.track_dsc]
-name = "dsc_placeholder"
-velocity_file = "miami/insar/us_isleofnormandy_s1_asc_t48/stack/dolphin/timeseries/velocity.tif" # Replace with descending velocity path.
+name = "edam_volendam_dsc"
+velocity_file = "projects/edam_volendam/insar/edam_volendam_s1_dsc_t000/stack/dolphin/timeseries/velocity.tif" # In dual-track setup, point to DSC stack velocity.
 coherence_file = "" # Optional descending coherence raster.
-los_east_coeff = 0.62 # Replace with descending east projection coefficient.
-los_up_coeff = 0.78 # Replace with descending up projection coefficient.
+los_east_coeff = 0.62 # Replace with DSC east projection coefficient.
+los_up_coeff = 0.78 # Replace with DSC up projection coefficient.

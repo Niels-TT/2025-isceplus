@@ -5,6 +5,7 @@
 .env
 .env.local
 .env.*.local
+*:Zone.Identifier
 
 # Miami project: generated search artifacts
 miami/insar/*/search/products/**
@@ -18,6 +19,8 @@ miami/insar/*/stack/**
 !miami/insar/*/stack/.gitkeep
 miami/insar/*/logs/**
 !miami/insar/*/logs/.gitkeep
+miami/insar/*/scratch/**
+!miami/insar/*/scratch/.gitkeep
 
 # Generated custom projects (from example scaffold)
 projects/*/insar/*/search/products/**
@@ -29,5 +32,7 @@ projects/*/insar/*/stack/**
 !projects/*/insar/*/stack/.gitkeep
 projects/*/insar/*/logs/**
 !projects/*/insar/*/logs/.gitkeep
+projects/*/insar/*/scratch/**
+!projects/*/insar/*/scratch/.gitkeep
 tests/__pycache__/**
 scripts/__pycache__/**

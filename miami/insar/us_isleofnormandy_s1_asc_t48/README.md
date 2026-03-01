@@ -17,6 +17,8 @@ conda activate isce3-feb
 ## Current Stack Definition
 - Config file: `config/processing_configuration.toml`
 - AOI source: `miami/aux/bbox.kml`
+- AOI processing buffer: `aoi.buffer_m = 3000.0` m
+- Final Dolphin crop: `processing.dolphin.crop_to_project_aoi = true`
 - Search outputs: `search/`
 - Selection policy: first 20 dates from reference `2015-09-21`
 - Selected span: `2015-09-21` to `2017-03-26`

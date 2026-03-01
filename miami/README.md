@@ -59,10 +59,18 @@ We always pass:
 
 ## Stack Definition (Current)
 - AOI: `miami/aux/bbox.kml`
+- AOI processing buffer: `aoi.buffer_m = 3000.0` m
 - Sensor/mode: Sentinel-1 IW SLC
 - Direction/track: ascending, relative orbit 48
 - Search window: 2015-09-21 to 2022-04-30
 - Selection policy: first 20 acquisition dates from reference date (`2015-09-21`)
+
+## AOI Buffer Behavior
+Why: small AOIs often need context margins for robust stack selection and coregistration.
+
+- `aoi.kml` is the project footprint you care about.
+- `aoi.buffer_m` expands AOI for discovery/search/DEM/COMPASS preprocessing.
+- Dolphin output bounds are cropped back to the project AOI by default (`processing.dolphin.crop_to_project_aoi = true`).
 
 ## Script Roles
 - `scripts/02_discover_s1_candidates.py` (repo-level): discovery ranking + map of AOI vs candidate stack footprints
@@ -76,7 +84,7 @@ We always pass:
 - `scripts/11_run_dolphin_workflow.py`: runs Dolphin and optional point export
 - `scripts/12_export_dolphin_points.py`: converts velocity raster to operational CSV/KMZ points
 - `scripts/13_export_dolphin_raster_viz.py`: converts velocity raster to colorized GeoTIFF/KMZ overlay products
-- `scripts/90_decompose_los_velocity.py`: decomposes ASC/DSC LOS velocity rasters into East/Up components
+- `scripts/90_decompose_los_velocity.py`: decomposes ASC/DSC LOS velocity rasters into East/Up components (`90_` marks optional end-of-pipeline utilities)
 
 ## Run Order
 Why: each stage depends on outputs from the previous one.
@@ -93,6 +101,17 @@ Optional pre-search geometry discovery (recommended when starting new AOIs):
 
 ```bash
 mamba run -n isce3-feb python scripts/02_discover_s1_candidates.py \
+  --repo-root . \
+  --config miami/insar/us_isleofnormandy_s1_asc_t48/config/processing_configuration.toml
+```
+
+Discovery query uses the buffered AOI (`aoi.buffer_m`).
+
+Optional reference-date check (after search):
+Why: reference-date choice affects temporal inversion conditioning and baseline spread.
+
+```bash
+mamba run -n isce3-feb python scripts/04_suggest_reference_date.py \
   --repo-root . \
   --config miami/insar/us_isleofnormandy_s1_asc_t48/config/processing_configuration.toml
 ```
@@ -177,16 +196,16 @@ Why: this solves the standard 2-geometry linear system per pixel to estimate Eas
 Why: clear I/O boundaries make debugging and reruns easier.
 
 - Search
-  - Input: AOI KML + `[search]` config
+  - Input: AOI KML + `aoi.buffer_m` + `[search]` config
   - Output: `search/products/scenes.csv`, `scene_names.txt`, `summary.json`, `search/raw/results.geojson`, `aoi.wkt`
 - Download SLC
   - Input: `scenes.csv` + Earthdata credentials
   - Output: `stack/slc/*.zip`, `stack/download_manifest.json`
 - Download DEM
-  - Input: AOI + DEM settings + OpenTopography API key
+  - Input: buffered AOI (`aoi.buffer_m`) + DEM settings + OpenTopography API key
   - Output: `stack/dem/*.tif` + `*.meta.json`
 - Prepare COMPASS
-  - Input: local SLC ZIPs + DEM + config
+  - Input: local SLC ZIPs + DEM + buffered AOI (`aoi.buffer_m`) + config
   - Output: `stack/compass/runconfigs/*.yaml`, `run_files/*.sh`, `prepare_summary.json`
 - Run COMPASS
   - Input: generated run files
@@ -194,6 +213,7 @@ Why: clear I/O boundaries make debugging and reruns easier.
 - Prepare Dolphin
   - Input: COMPASS CSLC HDF5
   - Output: `stack/dolphin/config/dolphin_config.yaml`, `stack/dolphin/inputs/cslc_files.txt`, `prepare_summary.json`
+  - Bounds behavior: final outputs cropped to project AOI when `crop_to_project_aoi=true`
   - If enabled: `stack/dolphin/qc/ifg_network.png` + `ifg_network_summary.json`
 - Run Dolphin
   - Input: Dolphin YAML + CSLC list

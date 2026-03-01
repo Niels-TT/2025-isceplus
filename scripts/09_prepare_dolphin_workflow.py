@@ -24,9 +24,10 @@ import h5py
 
 from stack_common import (
     DEFAULT_STACK_CONFIG_REL,
-    buffer_bbox,
+    buffered_kml_bbox,
     infer_stack_root,
     kml_bbox,
+    read_aoi_buffer_m,
     read_toml,
     resolve_path,
     resolve_stack_config,
@@ -478,7 +479,8 @@ def main() -> int:
     cslc_glob = str(dolphin_cfg.get("cslc_glob", "t*/20*/t*.h5")).strip() or "t*/20*/t*.h5"
     allow_recursive_cslc_search = bool_cfg(dolphin_cfg, "allow_recursive_cslc_search", False)
     cslc_subdataset = str(dolphin_cfg.get("cslc_subdataset", "data/VV")).strip()
-    bbox_buffer_deg = float(dolphin_cfg.get("bbox_buffer_deg", 0.0))
+    aoi_buffer_m = read_aoi_buffer_m(cfg)
+    crop_to_project_aoi = bool_cfg(dolphin_cfg, "crop_to_project_aoi", True)
     ministack_size = int(dolphin_cfg.get("ministack_size", 15))
     max_bandwidth = int(dolphin_cfg.get("max_bandwidth", 3))
     gpu_enabled = bool_cfg(dolphin_cfg, "gpu_enabled", False)
@@ -621,7 +623,25 @@ def main() -> int:
         return 3
 
     kml_path = resolve_path(repo_root, cfg["aoi"]["kml"])
-    west, south, east, north = buffer_bbox(kml_bbox(kml_path), bbox_buffer_deg)
+    buffered_west, buffered_south, buffered_east, buffered_north = buffered_kml_bbox(
+        kml_path,
+        aoi_buffer_m,
+    )
+    project_west, project_south, project_east, project_north = kml_bbox(kml_path)
+    if crop_to_project_aoi:
+        west, south, east, north = (
+            project_west,
+            project_south,
+            project_east,
+            project_north,
+        )
+    else:
+        west, south, east, north = (
+            buffered_west,
+            buffered_south,
+            buffered_east,
+            buffered_north,
+        )
 
     cmd = [
         "dolphin",
@@ -830,6 +850,15 @@ def main() -> int:
     print(f"Expected unique dates: {expected_unique_dates}")
     print(f"Worker block shape: {worker_block_shape}")
     print(f"Timeseries block shape: {timeseries_block_shape}")
+    print(f"AOI processing buffer (upstream): {aoi_buffer_m:.1f} m")
+    print(
+        "Dolphin output crop mode: "
+        f"{'project AOI' if crop_to_project_aoi else 'buffered AOI'}"
+    )
+    print(
+        "Buffered bbox (W,S,E,N): "
+        f"{buffered_west:.6f}, {buffered_south:.6f}, {buffered_east:.6f}, {buffered_north:.6f}"
+    )
     print(f"BBox (W,S,E,N): {west:.6f}, {south:.6f}, {east:.6f}, {north:.6f}")
     print(f"Dolphin option_overrides from TOML: {len(option_overrides)}")
     print(f"Extra Dolphin CLI args from TOML: {len(extra_cli_args)}")
@@ -916,6 +945,20 @@ def main() -> int:
         "expected_unique_dates": expected_unique_dates,
         "worker_block_shape": worker_block_shape,
         "timeseries_block_shape": timeseries_block_shape,
+        "aoi_buffer_m": aoi_buffer_m,
+        "crop_to_project_aoi": crop_to_project_aoi,
+        "buffered_bbox_wsen": [
+            buffered_west,
+            buffered_south,
+            buffered_east,
+            buffered_north,
+        ],
+        "project_bbox_wsen": [
+            project_west,
+            project_south,
+            project_east,
+            project_north,
+        ],
         "bbox_wsen": [west, south, east, north],
         "option_overrides": option_overrides,
         "extra_cli_args": extra_cli_args,

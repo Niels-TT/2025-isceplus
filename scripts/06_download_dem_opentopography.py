@@ -26,7 +26,9 @@ from tqdm import tqdm
 from stack_common import (
     DEFAULT_STACK_CONFIG_REL,
     buffer_bbox,
+    buffered_kml_bbox,
     kml_bbox,
+    read_aoi_buffer_m,
     read_toml,
     resolve_path,
     resolve_stack_config,
@@ -145,10 +147,16 @@ def main() -> int:
         help="OpenTopography DEM type (e.g. SRTMGL1_E, COP30). Defaults to stack config.",
     )
     parser.add_argument(
+        "--aoi-buffer-m",
+        type=float,
+        default=-1.0,
+        help="AOI processing buffer in meters. Defaults to [aoi].buffer_m (3000).",
+    )
+    parser.add_argument(
         "--buffer-deg",
         type=float,
         default=-1.0,
-        help="AOI bbox buffer in degrees. Defaults to config or 0.02.",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--output",
@@ -179,7 +187,7 @@ def main() -> int:
 
     aoi_kml = resolve_path(repo_root, cfg["aoi"]["kml"])
     demtype = args.demtype or dem_cfg.get("demtype", "COP30")
-    buffer_deg = args.buffer_deg if args.buffer_deg >= 0 else float(dem_cfg.get("bbox_buffer_deg", 0.02))
+    aoi_buffer_m = args.aoi_buffer_m if args.aoi_buffer_m >= 0 else read_aoi_buffer_m(cfg)
     vertical_datum = str(dem_cfg.get("vertical_datum", "")).strip() or "UNSET"
 
     output_value = args.output or dem_cfg.get("file")
@@ -196,8 +204,13 @@ def main() -> int:
         print("Use --overwrite to re-download.")
         return 0
 
-    xmin, ymin, xmax, ymax = kml_bbox(aoi_kml)
-    west, south, east, north = buffer_bbox((xmin, ymin, xmax, ymax), buffer_deg)
+    if args.buffer_deg >= 0:
+        xmin, ymin, xmax, ymax = kml_bbox(aoi_kml)
+        west, south, east, north = buffer_bbox((xmin, ymin, xmax, ymax), args.buffer_deg)
+        aoi_buffer_label = f"legacy --buffer-deg={args.buffer_deg}"
+    else:
+        west, south, east, north = buffered_kml_bbox(aoi_kml, aoi_buffer_m)
+        aoi_buffer_label = f"{aoi_buffer_m:.1f} m"
     api_key = read_topoapi_key()
 
     params: dict[str, str] = {
@@ -212,6 +225,7 @@ def main() -> int:
 
     print(f"Config: {config_path}")
     print(f"AOI KML: {aoi_kml}")
+    print(f"AOI DEM buffer: {aoi_buffer_label}")
     print(f"DEM output: {dem_path}")
     print(f"DEM type: {demtype}")
     print(f"DEM vertical datum (config): {vertical_datum}")
@@ -224,6 +238,7 @@ def main() -> int:
         "source_url": OPENTOPO_URL,
         "request": {
             "demtype": demtype,
+            "aoi_buffer_m": aoi_buffer_m,
             "south": south,
             "north": north,
             "west": west,

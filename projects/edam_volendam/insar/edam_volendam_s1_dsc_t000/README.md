@@ -1,4 +1,4 @@
-# __STACK_NAME__ Workspace
+# edam_volendam_s1_dsc_t000 Workspace
 
 Why: this directory keeps all generated artifacts for one stack, separate from scripts and source config.
 

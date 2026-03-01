@@ -1,0 +1,15 @@
+# Keep project setup files tracked, ignore heavy generated products.
+insar/*/search/products/**
+insar/*/search/raw/**
+insar/*/search/candidates/**
+!insar/*/search/products/.gitkeep
+!insar/*/search/raw/.gitkeep
+
+insar/*/stack/**
+!insar/*/stack/.gitkeep
+
+insar/*/logs/**
+!insar/*/logs/.gitkeep
+
+insar/*/scratch/**
+!insar/*/scratch/.gitkeep

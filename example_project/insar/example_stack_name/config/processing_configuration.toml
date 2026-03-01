@@ -13,26 +13,28 @@ site = "__SITE_NAME__"
 
 [aoi]
 kml = "__PROJECT_ROOT__/aux/bbox.kml"
+buffer_m = 3000.0 # Processing/search buffer around project AOI in meters.
 
 [search]
 platform = "SENTINEL1"
 processing_level = "SLC"
 beam_mode = "IW"
-flight_direction = "ASCENDING"
+flight_direction = "ASCENDING" # One stack = one direction (ASCENDING or DESCENDING).
 # Set using scripts/02_discover_s1_candidates.py before running stack search.
 relative_orbit = 0
+frame_number = 0 # Optional frame filter (integer); set >0 to pick one frame, keep 0 for all frames on the orbit.
 start = "2015-09-21"
 end = "2022-04-30"
 # Replace after first search + scripts/04_suggest_reference_date.py.
 reference_date = "2017-01-01"
-# Keep 0 while exploring; lock real counts once stack settings are final.
+# Optional count guards (0 disables check; >0 enforces exact expected counts).
 expected_scenes = 0
 expected_unique_dates = 0
 
 [selection]
 mode = "first_n_from_reference"
 max_dates = 30
-require_reference = true
+require_reference = false # Set true after choosing a confirmed reference_date from search results.
 
 [outputs]
 root = "__PROJECT_ROOT__/insar/__STACK_NAME__/search"
@@ -49,7 +51,6 @@ download_manifest = "__PROJECT_ROOT__/insar/__STACK_NAME__/stack/download_manife
 [ancillary.dem]
 file = "__PROJECT_ROOT__/insar/__STACK_NAME__/stack/dem/opentopo_srtm_gl1_ellip.tif"
 demtype = "SRTMGL1_E"
-bbox_buffer_deg = 0.02
 vertical_datum = "WGS84_ELLIPSOID"
 require_ellipsoid_heights = true
 
@@ -64,7 +65,6 @@ disable_hdf5_file_locking = true
 pol = "co-pol"
 x_spacing_m = 5.0
 y_spacing_m = 10.0
-bbox_buffer_deg = 0.02
 flatten = true
 corrections = true
 
@@ -80,7 +80,7 @@ keep_paths_relative = false # Set true only when you need portable relative path
 cslc_subdataset = "data/VV" # HDF5 subdataset to process; keep aligned with your CSLC polarization.
 cslc_glob = "t*/20*/t*.h5" # Primary CSLC discovery pattern relative to stack/compass.
 allow_recursive_cslc_search = false # Keep false for strict layout checks; true only for non-standard outputs.
-bbox_buffer_deg = 0.00 # Extra AOI margin in degrees; increase if edge effects clip valid pixels.
+crop_to_project_aoi = true # Keep final Dolphin outputs cropped to the project AOI (unbuffered).
 # mask_file = "path/to/water_mask_uint8.tif" # Use a uint8 mask (0 bad, 1 good) to suppress water/low-quality areas.
 
 # 2) Compute resources (controls parallelism and hardware use).
@@ -299,14 +299,14 @@ coherence_resampling = "bilinear" # Resampling for cross-track coherence reproje
 
 [processing.decomposition.track_asc]
 name = "__PROJECT_NAME___asc"
-velocity_file = "__PROJECT_ROOT__/insar/__STACK_NAME__/stack/dolphin/timeseries/velocity.tif"
+velocity_file = "__PROJECT_ROOT__/insar/__STACK_NAME__/stack/dolphin/timeseries/velocity.tif" # In dual-track setup, point to ASC stack velocity.
 coherence_file = "" # Optional; if blank, decomposition runs without coherence thresholding.
 los_east_coeff = -0.62 # Replace with ASC east projection coefficient for your chosen geometry.
 los_up_coeff = 0.78 # Replace with ASC up projection coefficient for your chosen geometry.
 
 [processing.decomposition.track_dsc]
 name = "__PROJECT_NAME___dsc"
-velocity_file = "__PROJECT_ROOT__/insar/__STACK_NAME__/stack/dolphin/timeseries/velocity.tif" # Replace with descending velocity path.
+velocity_file = "__PROJECT_ROOT__/insar/__STACK_NAME__/stack/dolphin/timeseries/velocity.tif" # In dual-track setup, point to DSC stack velocity.
 coherence_file = "" # Optional descending coherence raster.
 los_east_coeff = 0.62 # Replace with DSC east projection coefficient.
 los_up_coeff = 0.78 # Replace with DSC up projection coefficient.

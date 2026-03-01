@@ -54,13 +54,22 @@ python scripts/01_create_project_from_example.py \
   --project-name my_city
 ```
 
+For decomposition workflows, create ASC+DSC stacks in one pass:
+
+```bash
+python scripts/01_create_project_from_example.py \
+  --repo-root . \
+  --project-name my_city \
+  --dual-track
+```
+
 Then follow:
 - `example_project/README.md` (full end-to-end instructions)
 - `projects/my_city/.../config/processing_configuration.toml` (project-specific settings)
 
 Useful setup helpers:
 - `scripts/02_discover_s1_candidates.py`: discover candidate direction/orbit/frame geometry coverage before locking search settings.
-- `scripts/04_suggest_reference_date.py`: suggest a reference date from your searched stack dates.
+- `scripts/04_suggest_reference_date.py`: suggest a baseline-aware reference date from your searched stack dates.
 - `scripts/90_decompose_los_velocity.py`: decompose ASC/DSC LOS velocity rasters into East/Up velocity rasters.
 - `scripts/10_plot_ifg_network_qc.py`: create interferogram-network QC PNG/JSON from prepared Dolphin inputs.
 

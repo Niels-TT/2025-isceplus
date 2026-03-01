@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import csv
+import math
 import tomllib
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -13,6 +14,7 @@ from urllib.parse import urlparse
 KML_NS = {"kml": "http://www.opengis.net/kml/2.2"}
 # Empty default means: auto-discover when possible, otherwise require --config.
 DEFAULT_STACK_CONFIG_REL = ""
+DEFAULT_AOI_BUFFER_M = 3000.0
 STACK_CONFIG_GLOBS = (
     "projects/*/insar/*/config/processing_configuration.toml",
     "miami/insar/*/config/processing_configuration.toml",
@@ -196,6 +198,154 @@ def buffer_bbox(
         min(180.0, xmax + buffer_deg),
         min(90.0, ymax + buffer_deg),
     )
+
+
+def bbox_to_wkt(bbox: tuple[float, float, float, float]) -> str:
+    """Convert (xmin, ymin, xmax, ymax) bbox to WKT polygon text."""
+    xmin, ymin, xmax, ymax = bbox
+    return (
+        "POLYGON(("
+        f"{xmin} {ymin}, "
+        f"{xmax} {ymin}, "
+        f"{xmax} {ymax}, "
+        f"{xmin} {ymax}, "
+        f"{xmin} {ymin}"
+        "))"
+    )
+
+
+def meters_to_degree_buffers(buffer_m: float, lat_ref_deg: float) -> tuple[float, float]:
+    """Approximate meter buffer as lon/lat degree deltas at a reference latitude."""
+    meters_per_deg_lat = 111_320.0
+    lat_deg = max(0.0, float(buffer_m)) / meters_per_deg_lat
+    cos_lat = abs(math.cos(math.radians(lat_ref_deg)))
+    if cos_lat < 1e-3:
+        cos_lat = 1e-3
+    lon_deg = max(0.0, float(buffer_m)) / (meters_per_deg_lat * cos_lat)
+    return lon_deg, lat_deg
+
+
+def buffer_bbox_m(
+    bbox: tuple[float, float, float, float], buffer_m: float
+) -> tuple[float, float, float, float]:
+    """Expand a lon/lat bbox by an approximate meter distance."""
+    if buffer_m <= 0:
+        return bbox
+    xmin, ymin, xmax, ymax = bbox
+    lat_ref = (ymin + ymax) * 0.5
+    lon_deg, lat_deg = meters_to_degree_buffers(buffer_m, lat_ref_deg=lat_ref)
+    return (
+        max(-180.0, xmin - lon_deg),
+        max(-90.0, ymin - lat_deg),
+        min(180.0, xmax + lon_deg),
+        min(90.0, ymax + lat_deg),
+    )
+
+
+def read_aoi_buffer_m(cfg: dict, default_m: float = DEFAULT_AOI_BUFFER_M) -> float:
+    """Read AOI buffer distance in meters from config with compatibility fallbacks.
+
+    Preferred key:
+        [aoi]
+        buffer_m = 3000.0
+
+    Compatibility keys still accepted:
+        [aoi].aoi_buffer_m
+        top-level aoi_buffer_m
+    """
+    value: object = default_m
+    found_in_aoi = False
+    aoi_cfg = cfg.get("aoi", {})
+    if isinstance(aoi_cfg, dict):
+        if "buffer_m" in aoi_cfg:
+            value = aoi_cfg.get("buffer_m", default_m)
+            found_in_aoi = True
+        elif "aoi_buffer_m" in aoi_cfg:
+            value = aoi_cfg.get("aoi_buffer_m", default_m)
+            found_in_aoi = True
+    if (not found_in_aoi) and "aoi_buffer_m" in cfg:
+        value = cfg.get("aoi_buffer_m", default_m)
+
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        parsed = float(default_m)
+    return max(0.0, parsed)
+
+
+def _utm_epsg_from_lon_lat(lon: float, lat: float) -> int:
+    """Infer a local UTM EPSG code from lon/lat."""
+    zone = int(math.floor((lon + 180.0) / 6.0) + 1)
+    zone = max(1, min(60, zone))
+    return (32600 + zone) if lat >= 0 else (32700 + zone)
+
+
+def _buffer_kml_geometry_wgs84(kml_path: Path, buffer_m: float):
+    """Return buffered AOI geometry in EPSG:4326 when geo deps are available."""
+    from shapely.geometry import Polygon  # type: ignore[import-not-found]
+    from shapely.ops import transform  # type: ignore[import-not-found]
+    from pyproj import Transformer  # type: ignore[import-not-found]
+
+    points = parse_kml_points(kml_path)
+    polygon = Polygon(points)
+    if not polygon.is_valid:
+        polygon = polygon.buffer(0)
+    if polygon.is_empty:
+        return None
+    if buffer_m <= 0:
+        return polygon
+
+    centroid = polygon.centroid
+    epsg = _utm_epsg_from_lon_lat(float(centroid.x), float(centroid.y))
+    to_metric = Transformer.from_crs("EPSG:4326", f"EPSG:{epsg}", always_xy=True)
+    to_geographic = Transformer.from_crs(f"EPSG:{epsg}", "EPSG:4326", always_xy=True)
+
+    polygon_metric = transform(to_metric.transform, polygon)
+    buffered_metric = polygon_metric.buffer(buffer_m)
+    buffered_geo = transform(to_geographic.transform, buffered_metric)
+    if not buffered_geo.is_valid:
+        buffered_geo = buffered_geo.buffer(0)
+    if buffered_geo.is_empty:
+        return None
+    return buffered_geo
+
+
+def buffered_kml_to_wkt(kml_path: Path, buffer_m: float) -> str:
+    """Convert AOI KML to WKT, optionally buffered in meters.
+
+    Uses a local projected CRS when `shapely`/`pyproj` are available.
+    Falls back to a conservative buffered bbox polygon when unavailable.
+    """
+    if buffer_m <= 0:
+        return parse_kml_to_wkt(kml_path)
+
+    try:
+        geom = _buffer_kml_geometry_wgs84(kml_path, buffer_m)
+    except ModuleNotFoundError:
+        geom = None
+    if geom is not None:
+        return str(geom.wkt)
+    return bbox_to_wkt(buffer_bbox_m(kml_bbox(kml_path), buffer_m))
+
+
+def buffered_kml_bbox(kml_path: Path, buffer_m: float) -> tuple[float, float, float, float]:
+    """Compute AOI bbox, optionally buffered in meters."""
+    if buffer_m <= 0:
+        return kml_bbox(kml_path)
+
+    try:
+        geom = _buffer_kml_geometry_wgs84(kml_path, buffer_m)
+    except ModuleNotFoundError:
+        geom = None
+    if geom is not None:
+        minx, miny, maxx, maxy = geom.bounds
+        return (
+            max(-180.0, minx),
+            max(-90.0, miny),
+            min(180.0, maxx),
+            min(90.0, maxy),
+        )
+    return buffer_bbox_m(kml_bbox(kml_path), buffer_m)
 
 
 def read_scene_rows(scene_csv: Path) -> list[dict[str, str]]:

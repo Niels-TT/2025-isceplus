@@ -30,10 +30,10 @@ import yaml
 
 from stack_common import (
     DEFAULT_STACK_CONFIG_REL,
-    buffer_bbox,
+    buffered_kml_bbox,
     infer_stack_root,
     iso_to_yyyymmdd,
-    kml_bbox,
+    read_aoi_buffer_m,
     read_scene_rows,
     read_toml,
     resolve_path,
@@ -470,8 +470,8 @@ def main() -> int:
         return 3
 
     kml_path = resolve_path(repo_root, cfg["aoi"]["kml"])
-    bbox_buffer_deg = float(compass_cfg.get("bbox_buffer_deg", 0.02))
-    west, south, east, north = buffer_bbox(kml_bbox(kml_path), bbox_buffer_deg)
+    aoi_buffer_m = read_aoi_buffer_m(cfg)
+    west, south, east, north = buffered_kml_bbox(kml_path, aoi_buffer_m)
 
     csv_dates = sorted(
         iso_to_yyyymmdd(row["startTime"])
@@ -562,6 +562,7 @@ def main() -> int:
     print(f"Work dir: {work_dir}")
     print(f"Orbit dir: {effective_orbit_dir}")
     print(f"Burst DB file: {burst_db_file or '(COMPASS default)'}")
+    print(f"AOI processing buffer: {aoi_buffer_m:.1f} m")
     print(f"Browse image enabled: {browse_image_enabled}")
     print("Orbit retrieval: COMPASS/S1Reader uses local cache and auto-downloads missing files.")
     print("Orbit preference: POEORB (precise) first; RESORB only as fallback.")
@@ -624,6 +625,7 @@ def main() -> int:
         "date_start": start_date,
         "date_end_inclusive": end_date_inclusive,
         "date_end_exclusive_for_compass": end_date_exclusive,
+        "aoi_buffer_m": aoi_buffer_m,
         "bbox_wsen": [west, south, east, north],
         "run_file_count": len(run_files),
         "runconfig_fix_count": runconfig_fix_count,

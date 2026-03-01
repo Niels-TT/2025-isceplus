@@ -26,6 +26,7 @@ dependencies:
 
   # Plotting / notebook UX
   - matplotlib
+  - contextily
   - networkx
   - ipympl
   - ipywidgets
