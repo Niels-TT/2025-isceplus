@@ -27,6 +27,7 @@ Why: most first-run failures are missing dependencies or credentials.
 ```bash
 mamba env update -n isce3-feb -f envs/isce3-feb.yml
 conda activate isce3-feb
+python scripts/00_patch_rasterio_float16.py
 bash scripts/00_check_credentials.sh
 ```
 

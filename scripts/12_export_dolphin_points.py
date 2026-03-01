@@ -19,6 +19,7 @@ import csv
 import json
 import math
 import sys
+import tempfile
 import zipfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -140,7 +141,7 @@ class SelectedPoints:
     is_ps: np.ndarray | None
 
 
-def ensure_same_grid(base: rasterio.DatasetReader, other: rasterio.DatasetReader) -> bool:
+def ensure_same_grid(base: Any, other: Any) -> bool:
     """Check if two rasters are on the same pixel grid."""
     return (
         base.width == other.width
@@ -209,10 +210,15 @@ def select_points(
                     if use_ps_mask:
                         valid &= ps_arr > 0
                 else:
-                    if strict_grid_match:
+                    if use_ps_mask and strict_grid_match:
                         raise RuntimeError(
                             "PS mask raster grid does not match velocity grid."
                         )
+                    print(
+                        "[WARN] PS mask grid does not match velocity grid; "
+                        "ignoring PS mask for export.",
+                        file=sys.stderr,
+                    )
                     ps_arr = None
 
         if stride < 1:
@@ -315,8 +321,115 @@ def write_csv(points: SelectedPoints, out_csv: Path, altitude_scale: float) -> N
             )
 
 
-def build_kml(points: SelectedPoints, altitude_scale: float, clip_abs_mm_yr: float, name_prefix: str) -> str:
-    """Build KML document string for selected points."""
+def subset_points(points: SelectedPoints, idx: np.ndarray) -> SelectedPoints:
+    """Return a subset of selected points by integer indices."""
+    return SelectedPoints(
+        rows=points.rows[idx],
+        cols=points.cols[idx],
+        xs=points.xs[idx],
+        ys=points.ys[idx],
+        lons=points.lons[idx],
+        lats=points.lats[idx],
+        vel_m_yr=points.vel_m_yr[idx],
+        vel_mm_yr=points.vel_mm_yr[idx],
+        coh=points.coh[idx] if points.coh is not None else None,
+        is_ps=points.is_ps[idx] if points.is_ps is not None else None,
+    )
+
+
+def split_points_into_regions(points: SelectedPoints, target_points: int) -> list[np.ndarray]:
+    """Split points into spatial tiles with approximately target_points each."""
+    n_total = int(points.rows.size)
+    if n_total == 0:
+        return []
+    target = max(1, int(target_points))
+    n_regions = max(1, math.ceil(n_total / target))
+    if n_regions == 1:
+        return [np.arange(n_total, dtype=np.int64)]
+
+    grid = max(1, math.ceil(math.sqrt(n_regions)))
+    lon_min = float(np.min(points.lons))
+    lon_max = float(np.max(points.lons))
+    lat_min = float(np.min(points.lats))
+    lat_max = float(np.max(points.lats))
+
+    if lon_max <= lon_min or lat_max <= lat_min:
+        return [np.arange(n_total, dtype=np.int64)]
+
+    lon_edges = np.linspace(lon_min, lon_max, grid + 1)
+    lat_edges = np.linspace(lat_min, lat_max, grid + 1)
+    lon_bin = np.clip(np.digitize(points.lons, lon_edges, right=False) - 1, 0, grid - 1)
+    lat_bin = np.clip(np.digitize(points.lats, lat_edges, right=False) - 1, 0, grid - 1)
+
+    regions: list[np.ndarray] = []
+    for lat_i in range(grid):
+        for lon_i in range(grid):
+            idx = np.where((lat_bin == lat_i) & (lon_bin == lon_i))[0]
+            if idx.size == 0:
+                continue
+            regions.append(idx.astype(np.int64))
+    return regions if regions else [np.arange(n_total, dtype=np.int64)]
+
+
+def _expanded_bounds_wgs84(points: SelectedPoints) -> tuple[float, float, float, float]:
+    """Compute slightly padded WGS84 bounds for KML region entries."""
+    west = float(np.min(points.lons))
+    east = float(np.max(points.lons))
+    south = float(np.min(points.lats))
+    north = float(np.max(points.lats))
+
+    lon_span = max(east - west, 1e-6)
+    lat_span = max(north - south, 1e-6)
+    pad_lon = lon_span * 0.02
+    pad_lat = lat_span * 0.02
+    return west - pad_lon, south - pad_lat, east + pad_lon, north + pad_lat
+
+
+def build_root_network_link_kml(
+    name_prefix: str,
+    region_entries: list[tuple[str, str, tuple[float, float, float, float]]],
+    min_lod_pixels: int,
+) -> str:
+    """Build root KML with region-based network links (MintPy-style structure)."""
+    links: list[str] = []
+    min_lod = max(0, int(min_lod_pixels))
+    for title, href, (west, south, east, north) in region_entries:
+        links.append(
+            "<NetworkLink>"
+            f"<name>{xml_escape(title)}</name>"
+            "<visibility>1</visibility>"
+            "<Region>"
+            f"<Lod><minLodPixels>{min_lod}</minLodPixels><maxLodPixels>-1</maxLodPixels></Lod>"
+            "<LatLonAltBox>"
+            f"<north>{north:.12f}</north>"
+            f"<south>{south:.12f}</south>"
+            f"<east>{east:.12f}</east>"
+            f"<west>{west:.12f}</west>"
+            "</LatLonAltBox>"
+            "</Region>"
+            "<Link>"
+            f"<href>{xml_escape(href)}</href>"
+            "<viewRefreshMode>onRegion</viewRefreshMode>"
+            "</Link>"
+            "</NetworkLink>"
+        )
+
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<kml xmlns="http://www.opengis.net/kml/2.2">\n'
+        "<Document>\n"
+        f"<name>{xml_escape(name_prefix)} velocity points</name>\n"
+        "<open>0</open>\n"
+        "<Folder><name>Data</name><open>0</open>\n"
+        + "\n".join(links)
+        + "\n</Folder>\n"
+        "</Document>\n"
+        "</kml>\n"
+    )
+
+
+def _build_kml_styles(clip_abs_mm_yr: float) -> list[str]:
+    """Build shared KML point styles (blue-white-red)."""
     styles: list[str] = []
     for i in range(256):
         v = -clip_abs_mm_yr + (2.0 * clip_abs_mm_yr * i / 255.0)
@@ -327,57 +440,185 @@ def build_kml(points: SelectedPoints, altitude_scale: float, clip_abs_mm_yr: flo
             f"<Icon><href>http://maps.google.com/mapfiles/kml/shapes/shaded_dot.png</href></Icon>"
             f"</IconStyle><LineStyle><color>{color}</color><width>1</width></LineStyle></Style>"
         )
+    return styles
+
+
+def build_kml(
+    points: SelectedPoints,
+    altitude_scale: float,
+    clip_abs_mm_yr: float,
+    name_prefix: str,
+    compact_mode: bool,
+    compact_color_bins: int,
+    compact_max_points_per_placemark: int,
+) -> str:
+    """Build KML document string for selected points."""
+    styles = _build_kml_styles(clip_abs_mm_yr=clip_abs_mm_yr)
 
     header = [
         '<?xml version="1.0" encoding="UTF-8"?>',
         '<kml xmlns="http://www.opengis.net/kml/2.2">',
         "<Document>",
         f"<name>{xml_escape(name_prefix)} velocity points</name>",
-        "<open>1</open>",
+        "<open>0</open>",
         *styles,
-        "<Folder><name>Velocity Points</name><open>1</open>",
+        "<Folder><name>Velocity Points</name><open>0</open>",
     ]
 
     placemarks: list[str] = []
     denom = clip_abs_mm_yr if clip_abs_mm_yr > 0 else 1.0
-    for idx in range(points.rows.size):
-        v_mm = float(points.vel_mm_yr[idx])
-        norm = np.clip((v_mm + denom) / (2.0 * denom), 0.0, 1.0)
-        style_idx = int(round(norm * 255.0))
-        alt = float(v_mm * altitude_scale)
-        coh_txt = f"{float(points.coh[idx]):.3f}" if points.coh is not None else "n/a"
-        ps_txt = "1" if (points.is_ps is not None and bool(points.is_ps[idx])) else "0"
-        desc = (
-            f"Velocity: {v_mm:.2f} mm/yr\\n"
-            f"Coherence: {coh_txt}\\n"
-            f"PS: {ps_txt}\\n"
-            f"Pixel row/col: {int(points.rows[idx])}/{int(points.cols[idx])}"
-        )
-        placemarks.append(
-            "<Placemark>"
-            f"<name>{xml_escape(f'{name_prefix}_{idx + 1:06d}')}</name>"
-            f"<description>{xml_escape(desc)}</description>"
-            f"<styleUrl>#v{style_idx}</styleUrl>"
-            "<Point><extrude>1</extrude><altitudeMode>relativeToGround</altitudeMode>"
-            f"<coordinates>{points.lons[idx]:.8f},{points.lats[idx]:.8f},{alt:.3f}</coordinates>"
-            "</Point></Placemark>"
-        )
+    if compact_mode:
+        n_bins = max(1, int(compact_color_bins))
+        max_per = max(1, int(compact_max_points_per_placemark))
+        norm_all = np.clip((points.vel_mm_yr + denom) / (2.0 * denom), 0.0, 1.0)
+        if n_bins == 1:
+            bin_ids = np.zeros(points.rows.size, dtype=np.int32)
+        else:
+            bin_ids = np.floor(norm_all * n_bins).astype(np.int32)
+            bin_ids = np.clip(bin_ids, 0, n_bins - 1)
+
+        for bin_id in range(n_bins):
+            bin_idx = np.where(bin_ids == bin_id)[0]
+            if bin_idx.size == 0:
+                continue
+            style_idx = int(np.clip(round(((bin_id + 0.5) / n_bins) * 255.0), 0, 255))
+
+            for chunk_start in range(0, bin_idx.size, max_per):
+                chunk_idx = bin_idx[chunk_start : chunk_start + max_per]
+                part_num = (chunk_start // max_per) + 1
+                part_suffix = f" p{part_num}" if bin_idx.size > max_per else ""
+                vmin = float(np.min(points.vel_mm_yr[chunk_idx]))
+                vmax = float(np.max(points.vel_mm_yr[chunk_idx]))
+                desc = (
+                    f"Grouped points for Google Earth stability\\n"
+                    f"Count: {chunk_idx.size}\\n"
+                    f"Velocity range: {vmin:.2f} to {vmax:.2f} mm/yr"
+                )
+                geom_parts = ["<MultiGeometry>"]
+                for idx in chunk_idx:
+                    alt = float(points.vel_mm_yr[idx] * altitude_scale)
+                    geom_parts.append(
+                        "<Point><extrude>1</extrude><altitudeMode>relativeToGround</altitudeMode>"
+                        f"<coordinates>{points.lons[idx]:.8f},{points.lats[idx]:.8f},{alt:.3f}</coordinates>"
+                        "</Point>"
+                    )
+                geom_parts.append("</MultiGeometry>")
+                placemarks.append(
+                    "<Placemark>"
+                    f"<name>{xml_escape(f'{name_prefix}_bin_{bin_id + 1:03d}{part_suffix}')}</name>"
+                    f"<description>{xml_escape(desc)}</description>"
+                    f"<styleUrl>#v{style_idx}</styleUrl>"
+                    + "".join(geom_parts)
+                    + "</Placemark>"
+                )
+    else:
+        for idx in range(points.rows.size):
+            v_mm = float(points.vel_mm_yr[idx])
+            norm = np.clip((v_mm + denom) / (2.0 * denom), 0.0, 1.0)
+            style_idx = int(round(norm * 255.0))
+            alt = float(v_mm * altitude_scale)
+            coh_txt = f"{float(points.coh[idx]):.3f}" if points.coh is not None else "n/a"
+            ps_txt = "1" if (points.is_ps is not None and bool(points.is_ps[idx])) else "0"
+            desc = (
+                f"Velocity: {v_mm:.2f} mm/yr\\n"
+                f"Coherence: {coh_txt}\\n"
+                f"PS: {ps_txt}\\n"
+                f"Pixel row/col: {int(points.rows[idx])}/{int(points.cols[idx])}"
+            )
+            placemarks.append(
+                "<Placemark>"
+                f"<name>{xml_escape(f'{name_prefix}_{idx + 1:06d}')}</name>"
+                f"<description>{xml_escape(desc)}</description>"
+                f"<styleUrl>#v{style_idx}</styleUrl>"
+                "<Point><extrude>1</extrude><altitudeMode>relativeToGround</altitudeMode>"
+                f"<coordinates>{points.lons[idx]:.8f},{points.lats[idx]:.8f},{alt:.3f}</coordinates>"
+                "</Point></Placemark>"
+            )
 
     footer = ["</Folder>", "</Document>", "</kml>"]
     return "\n".join([*header, *placemarks, *footer]) + "\n"
 
 
-def write_kmz(points: SelectedPoints, out_kmz: Path, altitude_scale: float, clip_abs_mm_yr: float, name_prefix: str) -> None:
+def write_kmz(
+    points: SelectedPoints,
+    out_kmz: Path,
+    altitude_scale: float,
+    clip_abs_mm_yr: float,
+    name_prefix: str,
+    compact_mode: bool,
+    compact_color_bins: int,
+    compact_max_points_per_placemark: int,
+    use_network_links: bool,
+    region_target_points: int,
+    region_min_lod_pixels: int,
+) -> None:
     """Write selected points to KMZ for Google Earth Pro."""
     out_kmz.parent.mkdir(parents=True, exist_ok=True)
-    kml_text = build_kml(
-        points=points,
-        altitude_scale=altitude_scale,
-        clip_abs_mm_yr=clip_abs_mm_yr,
-        name_prefix=name_prefix,
-    )
-    with zipfile.ZipFile(out_kmz, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr("doc.kml", kml_text.encode("utf-8"))
+    if not use_network_links:
+        kml_text = build_kml(
+            points=points,
+            altitude_scale=altitude_scale,
+            clip_abs_mm_yr=clip_abs_mm_yr,
+            name_prefix=name_prefix,
+            compact_mode=compact_mode,
+            compact_color_bins=compact_color_bins,
+            compact_max_points_per_placemark=compact_max_points_per_placemark,
+        )
+        with zipfile.ZipFile(out_kmz, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("doc.kml", kml_text.encode("utf-8"))
+        return
+
+    region_idxs = split_points_into_regions(points, target_points=region_target_points)
+    if len(region_idxs) <= 1:
+        kml_text = build_kml(
+            points=points,
+            altitude_scale=altitude_scale,
+            clip_abs_mm_yr=clip_abs_mm_yr,
+            name_prefix=name_prefix,
+            compact_mode=compact_mode,
+            compact_color_bins=compact_color_bins,
+            compact_max_points_per_placemark=compact_max_points_per_placemark,
+        )
+        with zipfile.ZipFile(out_kmz, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("doc.kml", kml_text.encode("utf-8"))
+        return
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_root = Path(tmp_dir)
+        region_dir = tmp_root / "kml_data"
+        region_dir.mkdir(parents=True, exist_ok=True)
+        region_entries: list[tuple[str, str, tuple[float, float, float, float]]] = []
+
+        for i, idx in enumerate(region_idxs, start=1):
+            region_points = subset_points(points, idx)
+            region_name = f"Region {i:03d}"
+            region_rel = f"kml_data/region_{i:03d}.kml"
+            region_file = tmp_root / region_rel
+            region_kml = build_kml(
+                points=region_points,
+                altitude_scale=altitude_scale,
+                clip_abs_mm_yr=clip_abs_mm_yr,
+                name_prefix=f"{name_prefix}_r{i:03d}",
+                compact_mode=compact_mode,
+                compact_color_bins=compact_color_bins,
+                compact_max_points_per_placemark=compact_max_points_per_placemark,
+            )
+            region_file.write_text(region_kml, encoding="utf-8")
+            region_entries.append(
+                (region_name, region_rel, _expanded_bounds_wgs84(region_points))
+            )
+
+        root_kml = build_root_network_link_kml(
+            name_prefix=name_prefix,
+            region_entries=region_entries,
+            min_lod_pixels=region_min_lod_pixels,
+        )
+        (tmp_root / "doc.kml").write_text(root_kml, encoding="utf-8")
+
+        with zipfile.ZipFile(out_kmz, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            for file_path in sorted(tmp_root.rglob("*")):
+                if file_path.is_file():
+                    zf.write(file_path, arcname=str(file_path.relative_to(tmp_root)))
 
 
 def main() -> int:
@@ -460,6 +701,14 @@ def main() -> int:
     strict_grid_match = bool_cfg(export_cfg, "strict_grid_match", True)
     altitude_scale = float_cfg(export_cfg, "altitude_scale_m_per_mm_per_year", 3.0)
     clip_abs = float_cfg(export_cfg, "color_clip_abs_mm_per_year", 30.0)
+    kmz_compact_mode = bool_cfg(export_cfg, "kmz_compact_mode", True)
+    kmz_compact_color_bins = int_cfg(export_cfg, "kmz_compact_color_bins", 32)
+    kmz_compact_max_points = int_cfg(
+        export_cfg, "kmz_compact_max_points_per_placemark", 5000
+    )
+    kmz_use_network_links = bool_cfg(export_cfg, "kmz_use_network_links", True)
+    kmz_region_target_points = int_cfg(export_cfg, "kmz_region_target_points", 2000)
+    kmz_region_min_lod_pixels = int_cfg(export_cfg, "kmz_region_min_lod_pixels", 0)
     name_prefix = str_cfg(export_cfg, "name_prefix", "dolphin")
     csv_file = resolve_path(
         repo_root,
@@ -487,6 +736,16 @@ def main() -> int:
     print(f"Strict grid match: {strict_grid_match}")
     print(f"KMZ altitude scale (m per mm/yr): {altitude_scale}")
     print(f"KMZ color clip abs (mm/yr): {clip_abs}")
+    print(
+        "KMZ compact mode: "
+        f"{kmz_compact_mode} (bins={kmz_compact_color_bins}, "
+        f"max_points_per_placemark={kmz_compact_max_points})"
+    )
+    print(
+        "KMZ network links: "
+        f"{kmz_use_network_links} (target_points={kmz_region_target_points}, "
+        f"min_lod_pixels={kmz_region_min_lod_pixels})"
+    )
 
     if args.dry_run:
         return 0
@@ -512,6 +771,12 @@ def main() -> int:
             altitude_scale=altitude_scale,
             clip_abs_mm_yr=clip_abs,
             name_prefix=name_prefix,
+            compact_mode=kmz_compact_mode,
+            compact_color_bins=kmz_compact_color_bins,
+            compact_max_points_per_placemark=kmz_compact_max_points,
+            use_network_links=kmz_use_network_links,
+            region_target_points=kmz_region_target_points,
+            region_min_lod_pixels=kmz_region_min_lod_pixels,
         )
 
     summary = {
@@ -530,6 +795,12 @@ def main() -> int:
         "strict_grid_match": strict_grid_match,
         "altitude_scale_m_per_mm_per_year": altitude_scale,
         "color_clip_abs_mm_per_year": clip_abs,
+        "kmz_compact_mode": kmz_compact_mode,
+        "kmz_compact_color_bins": kmz_compact_color_bins,
+        "kmz_compact_max_points_per_placemark": kmz_compact_max_points,
+        "kmz_use_network_links": kmz_use_network_links,
+        "kmz_region_target_points": kmz_region_target_points,
+        "kmz_region_min_lod_pixels": kmz_region_min_lod_pixels,
         "stats": stats,
     }
     summary_path = output_dir / "export_summary.json"

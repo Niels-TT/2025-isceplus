@@ -266,6 +266,12 @@ kmz_file = "projects/edam_volendam/insar/edam_volendam_s1_asc_t000/stack/dolphin
 name_prefix = "edam_volendam_dolphin" # Placemark name prefix.
 altitude_scale_m_per_mm_per_year = 3.0 # 3D height scale in meters per mm/yr (relativeToGround).
 color_clip_abs_mm_per_year = 30.0 # Velocity color scale clip (+/- mm/yr) for consistent legend behavior.
+kmz_compact_mode = true # Group points into a small number of KML features to keep Google Earth Pro stable.
+kmz_compact_color_bins = 32 # Number of color groups used in compact mode (higher = finer color detail).
+kmz_compact_max_points_per_placemark = 5000 # Split very large groups to avoid oversized KML features.
+kmz_use_network_links = true # MintPy-style regionated KMZ: load only visible point tiles on demand.
+kmz_region_target_points = 2000 # Approximate points per region KML tile for network-link mode.
+kmz_region_min_lod_pixels = 0 # Google Earth LOD threshold before a region tile is loaded (0 = load regardless of zoom).
 
 [processing.dolphin.raster_viz]
 # Quicklook raster visualization exports (for fast inspection).

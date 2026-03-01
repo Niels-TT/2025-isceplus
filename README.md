@@ -19,7 +19,13 @@ mamba env update -n isce3-feb -f envs/isce3-feb.yml
 # If mamba is not installed, use:
 # conda env update -n isce3-feb -f envs/isce3-feb.yml
 conda activate isce3-feb
+python scripts/00_patch_rasterio_float16.py
 ```
+
+Why this patch step exists:
+- Current `isce3` builds in this env pin GDAL `3.11.x`.
+- Some `rasterio 1.4.x` builds with GDAL `3.11.x` miss Float16 dtype mapping (`KeyError: 15`).
+- The patch backports the missing dtype map so Dolphin outputs can be read directly.
 
 Quick checks:
 
