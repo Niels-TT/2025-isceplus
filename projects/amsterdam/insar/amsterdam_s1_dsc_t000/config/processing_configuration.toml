@@ -1,0 +1,355 @@
+[template]
+# Replace placeholders after copying or use:
+#   python scripts/01_create_project_from_example.py --project-name <name>
+# Placeholders:
+# - projects/amsterdam -> project folder path (for example projects/my_city)
+# - amsterdam_s1_dsc_t000   -> stack folder name under insar/
+# - amsterdam -> short project identifier used in product labels
+# - amsterdam    -> descriptive site label
+
+[project]
+name = "amsterdam_s1_dsc_t000"
+site = "amsterdam"
+
+[aoi]
+kml = "projects/amsterdam/aux/bbox.kml"
+buffer_m = 3000.0 # Processing/search buffer around project AOI in meters.
+
+[search]
+platform = "SENTINEL1"
+processing_level = "SLC"
+beam_mode = "IW"
+flight_direction = "DESCENDING" # One stack = one direction (ASCENDING or DESCENDING).
+# Set using scripts/02_discover_s1_candidates.py before running stack search.
+relative_orbit = 37
+frame_number = 416 # Optional frame filter (integer); set >0 to pick one frame, keep 0 for all frames on the orbit.
+start = "2023-09-21"
+end = "2026-03-02"
+# Replace after first search + scripts/04_suggest_reference_date.py.
+reference_date = "2023-09-21"
+# Optional count guards (0 disables check; >0 enforces exact expected counts).
+expected_scenes = 0
+expected_unique_dates = 0
+
+[selection]
+mode = "first_n_from_reference"
+max_dates = 30
+require_reference = false # Set true after choosing a confirmed reference_date from search results.
+
+[outputs]
+root = "projects/amsterdam/insar/amsterdam_s1_dsc_t000/search"
+scene_list = "products/scene_names.txt"
+metadata_csv = "products/scenes.csv"
+summary_json = "products/summary.json"
+geojson = "raw/results.geojson"
+wkt = "raw/aoi.wkt"
+
+[storage]
+slc_dir = "projects/amsterdam/insar/amsterdam_s1_dsc_t000/stack/slc"
+download_manifest = "projects/amsterdam/insar/amsterdam_s1_dsc_t000/stack/download_manifest.json"
+
+[ancillary.dem]
+file = "projects/amsterdam/insar/amsterdam_s1_dsc_t000/stack/dem/opentopo_srtm_gl1_ellip.tif"
+demtype = "SRTMGL1_E"
+vertical_datum = "WGS84_ELLIPSOID"
+require_ellipsoid_heights = true
+
+[processing.compass]
+work_dir = "projects/amsterdam/insar/amsterdam_s1_dsc_t000/stack/compass"
+orbit_dir = "projects/amsterdam/insar/amsterdam_s1_dsc_t000/stack/orbits"
+burst_db_file = "projects/amsterdam/insar/amsterdam_s1_dsc_t000/stack/compass/opera-burst-bbox-only.sqlite3"
+logs_dir = "projects/amsterdam/insar/amsterdam_s1_dsc_t000/logs/compass"
+common_bursts_only = true
+browse_image = false
+disable_hdf5_file_locking = true
+pol = "co-pol"
+x_spacing_m = 5.0
+y_spacing_m = 10.0
+flatten = true
+corrections = true
+
+[processing.dolphin]
+# 0) Paths and reproducibility (resolved first by the prep wrapper).
+work_dir = "projects/amsterdam/insar/amsterdam_s1_dsc_t000/stack/dolphin" # Root folder for Dolphin products.
+config_file = "projects/amsterdam/insar/amsterdam_s1_dsc_t000/stack/dolphin/config/dolphin_config.yaml" # Generated YAML used by `dolphin run`.
+cslc_file_list = "projects/amsterdam/insar/amsterdam_s1_dsc_t000/stack/dolphin/inputs/cslc_files.txt" # Deterministic list of validated CSLC inputs.
+reference_template_file = "projects/amsterdam/insar/amsterdam_s1_dsc_t000/stack/dolphin/config/dolphin_config.reference.yaml" # Full default template from installed Dolphin.
+keep_paths_relative = false # Set true only when you need portable relative paths across machines.
+
+# 1) Input selection / AOI clipping (applied when generating Dolphin config).
+cslc_subdataset = "data/VV" # HDF5 subdataset to process; keep aligned with your CSLC polarization.
+cslc_glob = "t*/20*/t*.h5" # Primary CSLC discovery pattern relative to stack/compass.
+allow_recursive_cslc_search = false # Keep false for strict layout checks; true only for non-standard outputs.
+crop_to_project_aoi = true # Keep final Dolphin outputs cropped to the project AOI (unbuffered).
+# mask_file = "path/to/water_mask_uint8.tif" # Use a uint8 mask (0 bad, 1 good) to suppress water/low-quality areas.
+
+# 2) Compute resources (controls parallelism and hardware use).
+gpu_enabled = false # Enable only when CUDA stack is stable for your environment.
+threads_per_worker = 2 # 10-core profile: 2 threads/worker keeps CPU busy without over-committing RAM.
+n_parallel_bursts = 3 # 10-core profile: phase-linking chunks in parallel (effective CPU use with 2 threads/worker).
+worker_block_shape = [128, 128] # Memory guard: smaller blocks reduce RAM spikes during chunk processing.
+n_parallel_unwrap_jobs = 2 # 10-core profile: unwrap two IFGs in parallel while staying memory-safe.
+
+# 3) Phase linking + interferogram network design.
+ministack_size =20 # Sequential estimator window size; larger is steadier but heavier.
+max_bandwidth = 7 # Nearest-neighbor interferogram bandwidth; larger adds density and compute.
+phase_linking_use_evd = false # Switch to EVD instead of EMI only for targeted experiments.
+phase_linking_mask_input_ps = false # Mask PS during linking if PS dominate covariance estimates.
+# phase_linking_half_window_x = 14 # Half-window (x) for SHP/covariance estimation; increase for noisier data.
+# phase_linking_half_window_y = 7 # Half-window (y) for SHP/covariance estimation.
+# phase_linking_shp_method = "GLRT" # SHP detector: GLRT (default), KS, RECT, or NONE.
+# phase_linking_shp_alpha = 0.001 # SHP significance; lower values include more neighbors.
+# phase_linking_beta = 0.0 # Correlation regularization; raise slightly if inversion is unstable.
+# phase_linking_baseline_lag = 3 # StBAS lag: only nearest-N links in phase-linking covariance.
+# max_temporal_baseline = 48 # Maximum temporal baseline (days) for IFG network pruning.
+
+# 4) Unwrapping stage.
+run_unwrap = true # Keep true for displacement products; false for wrapped-phase-only tests.
+run_goldstein = false # Enable when wrapped phase is noisy before unwrapping.
+run_interpolation = false # Enable to fill low-correlation gaps before unwrapping.
+zero_where_masked = false # Set true when unwrapper should ignore masked pixels explicitly.
+unwrap_method = "SNAPHU" # One of SNAPHU/ICU/PHASS/SPURT/WHIRLWIND.
+# snaphu_cost = "smooth" # SNAPHU statistical cost mode: smooth or defo.
+# snaphu_init_method = "mcf" # SNAPHU init: mcf (robust) or mst (faster).
+# snaphu_ntiles_x = 1 # SNAPHU tiling in x; increase only for very large rasters.
+# snaphu_ntiles_y = 1 # SNAPHU tiling in y.
+# snaphu_tile_overlap_x = 0 # Tile overlap in x pixels (if tiling is enabled).
+# snaphu_tile_overlap_y = 0 # Tile overlap in y pixels.
+# snaphu_n_parallel_tiles = 1 # Parallel SNAPHU tiles per interferogram.
+
+# 5) Time-series inversion / velocity.
+timeseries_run_inversion = true # Keep true to solve displacement time series from IFGs.
+timeseries_run_velocity = true # Keep true to fit velocity from solved time series.
+timeseries_method = "L1" # L1 is robust to outliers; L2 is faster/smoother.
+timeseries_correlation_threshold = 0.2 # Raise to mask noisier pixels more aggressively.
+timeseries_block_shape = [128, 128] # Memory guard for inversion/velocity blocks.
+timeseries_num_parallel_blocks = 3 # 10-core profile: parallel inversion blocks without exceeding 28 GB RAM.
+
+# 6) Output grid and visualization products.
+add_overviews = true # Build image pyramids for faster map viewing.
+# output_epsg = 32617 # Force output projection when you do not want auto-selected EPSG.
+# strides_x = 1 # X decimation stride; increase for faster lower-resolution experimentation.
+# strides_y = 1 # Y decimation stride.
+
+# 7) Raw CLI passthrough (last-resort for flags not modeled above).
+# Example:
+# extra_cli_args = [
+#   "--output-options.overview-levels", "2", "4", "8", "16",
+#   "--phase-linking.write-closure-phase",
+# ]
+extra_cli_args = [] # Appended at the end of the generated `dolphin config` command.
+allow_raw_extra_cli_args = false # Safety default: keep false and prefer option_overrides.
+# Do not duplicate wrapper-managed options here; prepare script now fails on overlaps.
+
+# Structured passthrough for any Dolphin config flag.
+# Key format: Dolphin option name without leading `--` (quoted if it contains dots).
+# Value types:
+# - bool: emits --option / --no-option
+# - scalar (str/int/float): emits --option value
+# - list: emits --option v1 v2 ...
+# Do not duplicate wrapper-managed options here; prepare script now fails on overlaps.
+[processing.dolphin.option_overrides]
+# Complete advanced option catalog for unmapped Dolphin flags.
+# Why: every installed Dolphin knob is now configurable here without editing Python.
+# Note: keep wrapper-managed options in [processing.dolphin], not here.
+
+# Input and metadata options.
+# "log-file" = "projects/amsterdam/insar/amsterdam_s1_dsc_t000/stack/dolphin/dolphin.log" # Override Dolphin log output location.
+# "require-cslc-files" = true # Keep true for strict input checks; false only for debugging config generation.
+# "amplitude-dispersion-files" = ["/abs/path/amp_dispersion.tif"] # Reuse precomputed AD rasters.
+# "amplitude-mean-files" = ["/abs/path/amp_mean.tif"] # Reuse precomputed amplitude mean rasters.
+# "layover-shadow-mask-files" = ["/abs/path/layover_shadow_mask.tif"] # Optional layover/shadow mask inputs.
+# "input-options.cslc-date-fmt" = "%Y%m%d" # Date parser format for CSLC filenames.
+# "input-options.wavelength" = 0.05546576 # Force radar wavelength (meters) if sensor autodetection fails.
+
+# Output encoding and packaging options.
+# "output-options.bounds-wkt" = "POLYGON ((-80.16 25.84, -80.12 25.84, -80.12 25.91, -80.16 25.91, -80.16 25.84))" # AOI polygon as WKT (alternative to bounds).
+# "output-options.gtiff-creation-options" = [
+#   "COMPRESS=lzw", "ZLEVEL=4", "BIGTIFF=yes", "TILED=yes", "BLOCKXSIZE=128", "BLOCKYSIZE=128"
+# ] # Tune GeoTIFF size/speed tradeoff.
+# "output-options.overview-levels" = [2, 4, 8, 16, 32, 64] # Pyramid levels for map display.
+# "output-options.extra-reference-date" = "2017-09-08" # Add a second reference epoch for event-reset networks.
+# "output-options.hdf5-creation-options.chunks" = [128, 128] # HDF5 chunking for internal datasets.
+# "output-options.hdf5-creation-options.compression" = "gzip" # HDF5 compression backend.
+# "output-options.hdf5-creation-options.compression-opts" = 4 # HDF5 compression level.
+# "output-options.hdf5-creation-options.shuffle" = true # Shuffle filter before HDF5 compression.
+
+# Persistent scatterer (PS) mask behavior.
+# "ps-options.amp-dispersion-threshold" = 0.25 # PS candidate threshold on amplitude dispersion.
+
+# Phase-linking advanced controls.
+# "phase-linking.max-num-compressed" = 12 # Keep more compressed SLCs for long stacks.
+# "phase-linking.output-reference-idx" = 0 # Reference SLC index after phase linking.
+# "phase-linking.zero-correlation-threshold" = 0.0 # Clamp low correlation entries to zero.
+# "phase-linking.compressed-slc-plan" = "ALWAYS_FIRST" # Compression strategy: ALWAYS_FIRST/FIRST_PER_MINISTACK/LAST_PER_MINISTACK.
+"phase-linking.write-crlb" = false # Workaround for CRLB repack dtype bug (KeyError: 15) in current env.
+"phase-linking.write-closure-phase" = true # Enable closure-phase diagnostics during algorithm tuning.
+
+# Interferogram network overrides.
+# "interferogram-network.reference-idx" = 0 # Reference date for single-reference network mode.
+# "interferogram-network.indexes" = [[0, 1], [1, 2], [2, 3]] # Explicit (ref_idx, sec_idx) pairs for manual network design.
+
+# Unwrap preprocess options (used when filtering/interpolation are enabled).
+# "unwrap-options.preprocess-options.alpha" = 0.5 # Goldstein filter exponent.
+# "unwrap-options.preprocess-options.max-radius" = 51 # Interpolation neighbor radius in pixels.
+# "unwrap-options.preprocess-options.interpolation-cor-threshold" = 0.25 # Correlation threshold for interpolation mask.
+# "unwrap-options.preprocess-options.interpolation-similarity-threshold" = 0.3 # Phase-similarity threshold for interpolation mask.
+# "unwrap-options.preprocess-options.zero-correlation-where-interpolating" = false # Zero coherence at interpolated pixels.
+
+# SNAPHU advanced unwrapping behavior.
+# "unwrap-options.snaphu-options.single-tile-reoptimize" = false # Run final single-tile refinement after tiled unwrap.
+
+# TOPHU advanced options (when unwrap_method is TOPHU/PHASS stack path).
+# "unwrap-options.tophu-options.ntiles" = [1, 1] # Tile layout for TOPHU.
+# "unwrap-options.tophu-options.downsample-factor" = [1, 1] # Additional coarse downsampling for TOPHU.
+# "unwrap-options.tophu-options.init-method" = "mcf" # TOPHU initialization: mcf or mst.
+# "unwrap-options.tophu-options.cost" = "smooth" # TOPHU cost model: smooth or defo.
+
+# SPURT advanced options (when unwrap_method is SPURT).
+# "unwrap-options.spurt-options.temporal-coherence-threshold" = 0.7 # Temporal-coherence gate for irregular-grid points.
+# "unwrap-options.spurt-options.similarity-threshold" = 0.5 # Similarity gate for irregular-grid points.
+# "unwrap-options.spurt-options.run-ambiguity-interpolation" = true # Fill masked pixels after SPURT unwrapping.
+# "unwrap-options.spurt-options.general-settings.use-tiles" = true # Enable SPURT spatial tiling.
+# "unwrap-options.spurt-options.tiler-settings.max-tiles" = 64 # Upper bound on number of SPURT tiles.
+# "unwrap-options.spurt-options.tiler-settings.target-points-for-generation" = 120000 # Target points used for tile generation.
+# "unwrap-options.spurt-options.tiler-settings.target-points-per-tile" = 900000 # Density goal per SPURT tile.
+# "unwrap-options.spurt-options.tiler-settings.dilation-factor" = 0.05 # Fractional tile dilation for overlap.
+# "unwrap-options.spurt-options.solver-settings.t-worker-count" = 1 # Temporal-solver workers.
+# "unwrap-options.spurt-options.solver-settings.s-worker-count" = 1 # Spatial-solver workers.
+# "unwrap-options.spurt-options.solver-settings.links-per-batch" = 150000 # Temporal links per parallel batch.
+# "unwrap-options.spurt-options.solver-settings.t-cost-type" = "constant" # Temporal edge-cost model.
+# "unwrap-options.spurt-options.solver-settings.t-cost-scale" = 100.0 # Temporal edge-cost scaling.
+# "unwrap-options.spurt-options.solver-settings.s-cost-type" = "constant" # Spatial edge-cost model.
+# "unwrap-options.spurt-options.solver-settings.s-cost-scale" = 100.0 # Spatial edge-cost scaling.
+# "unwrap-options.spurt-options.solver-settings.num-parallel-tiles" = 1 # Parallel SPURT tiles during solve.
+# "unwrap-options.spurt-options.merger-settings.min-overlap-points" = 25 # Minimum overlap points to merge tiles.
+# "unwrap-options.spurt-options.merger-settings.method" = "dirichlet" # Tile merge method.
+# "unwrap-options.spurt-options.merger-settings.bulk-method" = "L2" # Bulk offset estimator between tiles.
+# "unwrap-options.spurt-options.merger-settings.num-parallel-ifgs" = 3 # IFGs merged per batch.
+
+# Time-series advanced controls.
+# "timeseries-options.reference-point" = [1000, 1000] # Force inversion reference pixel (row, col).
+# "timeseries-options.apply-mask-to-timeseries" = true # Apply input mask to timeseries outputs.
+
+[processing.dolphin.qc]
+# Intermediate quality-control visuals (generated at Dolphin prepare stage).
+enabled = true # Auto-create interferogram network PNG + JSON from prepared CSLC list.
+ifg_network_png = "projects/amsterdam/insar/amsterdam_s1_dsc_t000/stack/dolphin/qc/ifg_network.png"
+ifg_network_summary_json = "projects/amsterdam/insar/amsterdam_s1_dsc_t000/stack/dolphin/qc/ifg_network_summary.json"
+max_bandwidth_override = 0 # 0 means use processing.dolphin.max_bandwidth.
+max_temporal_baseline_days_override = 0 # 0 means use processing.dolphin.max_temporal_baseline (if set).
+
+[processing.dolphin.point_exports]
+# Operational point exports (auto-run after successful dolphin run).
+enabled = true # Master switch: run CSV/KMZ point export stage automatically.
+csv_enabled = true # Write tabular point output for downstream operations/BI.
+kmz_enabled = true # Write Google Earth Pro point layer (3D placemarks).
+
+# Inputs (leave blank to auto-discover from Dolphin outputs).
+velocity_file = "projects/amsterdam/insar/amsterdam_s1_dsc_t000/stack/dolphin/timeseries/velocity.tif" # Source velocity raster (m/yr).
+coherence_file = "" # Optional temporal coherence raster; blank = auto-pick latest.
+ps_mask_file = "" # Optional PS mask raster; blank = auto-pick t*/PS/ps_pixels.tif.
+
+# Selection logic.
+min_temporal_coherence = 0.6 # Keep only points above this coherence threshold.
+use_ps_mask = false # Set true for PS-only export; false keeps valid PS/DS raster points.
+stride = 1 # Spatial decimation stride before export to control output volume.
+max_points = 80000 # Hard cap for export size (deterministic down-sampling if exceeded).
+strict_grid_match = true # Fail export when coherence/PS grids do not match velocity grid.
+
+# Outputs.
+output_dir = "projects/amsterdam/insar/amsterdam_s1_dsc_t000/stack/dolphin/exports" # Folder for CSV/KMZ outputs.
+csv_file = "projects/amsterdam/insar/amsterdam_s1_dsc_t000/stack/dolphin/exports/velocity_points.csv" # Point table output.
+kmz_file = "projects/amsterdam/insar/amsterdam_s1_dsc_t000/stack/dolphin/exports/velocity_points.kmz" # Google Earth output.
+
+# KMZ styling / 3D behavior.
+name_prefix = "amsterdam_dolphin" # Placemark name prefix.
+altitude_scale_m_per_mm_per_year = 3.0 # 3D height scale in meters per mm/yr (relativeToGround).
+color_clip_abs_mm_per_year = 10.0 # Velocity color scale clip (+/- mm/yr) for consistent legend behavior.
+kmz_compact_mode = true # Group points into a small number of KML features to keep Google Earth Pro stable.
+kmz_compact_color_bins = 32 # Number of color groups used in compact mode (higher = finer color detail).
+kmz_compact_max_points_per_placemark = 5000 # Split very large groups to avoid oversized KML features.
+kmz_use_network_links = true # MintPy-style regionated KMZ: load only visible point tiles on demand.
+kmz_region_target_points = 2000 # Approximate points per region KML tile for network-link mode.
+kmz_region_min_lod_pixels = 0 # Google Earth LOD threshold before a region tile is loaded (0 = load regardless of zoom).
+
+[processing.dolphin.raster_viz]
+# Quicklook raster visualization exports (for fast inspection).
+enabled = true # Master switch: run raster quicklook exports automatically after dolphin run.
+geotiff_enabled = true # Write colorized GeoTIFF for immediate use in QGIS.
+kmz_enabled = true # Write KMZ ground overlay + legend for Google Earth Pro.
+
+# Inputs and outputs.
+velocity_file = "projects/amsterdam/insar/amsterdam_s1_dsc_t000/stack/dolphin/timeseries/velocity.tif" # Source velocity raster (m/yr).
+output_dir = "projects/amsterdam/insar/amsterdam_s1_dsc_t000/stack/dolphin/exports" # Folder for raster viz outputs.
+colorized_tif = "projects/amsterdam/insar/amsterdam_s1_dsc_t000/stack/dolphin/exports/velocity_colorized.tif" # RGBA georeferenced quicklook.
+kmz_file = "projects/amsterdam/insar/amsterdam_s1_dsc_t000/stack/dolphin/exports/velocity_overlay.kmz" # Google Earth overlay KMZ.
+
+# Visualization controls.
+name_prefix = "amsterdam_dolphin" # Product naming prefix for KMZ overlay metadata.
+clip_abs_mm_per_year = 30.0 # Symmetric clip for diverging blue/white/red color ramp.
+legend_width_px = 512 # Embedded legend width in KMZ.
+legend_height_px = 40 # Embedded legend height in KMZ.
+
+[processing.decomposition]
+# Dual-geometry LOS decomposition (ASC + DSC velocity -> East + Up).
+enabled = false # Set true only after both ASC and DSC Dolphin velocity rasters exist.
+run_after_dolphin = false # Optional auto-run at end of 11_run_dolphin_workflow.py.
+output_dir = "projects/amsterdam/insar/amsterdam_s1_dsc_t000/stack/decomposition"
+target_grid = "dsc" # Grid on which outputs are written: asc or dsc.
+min_temporal_coherence = 0.6 # Applied when coherence rasters are provided.
+max_condition_number = 50.0 # Geometry guard; lower is stricter.
+write_consistency_error = true # Writes residual LOS reconstruction error raster.
+velocity_resampling = "bilinear" # Resampling for cross-track velocity reprojection.
+coherence_resampling = "bilinear" # Resampling for cross-track coherence reprojection.
+
+[processing.decomposition.point_exports]
+# Point deliverables from decomposition East/Up rasters.
+enabled = false # Enable to export decomposition points after 90_decompose_los_velocity.py.
+csv_enabled = true # Write tabular decomposition points (east/up).
+kmz_enabled = true # Write Google Earth point KMZ files (east/up).
+output_dir = "projects/amsterdam/insar/amsterdam_s1_dsc_t000/stack/decomposition/exports"
+name_prefix = "amsterdam_decomposition"
+stride = 1
+max_points = 80000
+altitude_scale_m_per_mm_per_year = 3.0
+color_clip_abs_mm_per_year = 10.0
+kmz_compact_mode = true
+kmz_compact_color_bins = 32
+kmz_compact_max_points_per_placemark = 5000
+kmz_use_network_links = true
+kmz_region_target_points = 2000
+kmz_region_min_lod_pixels = 0
+east_csv_file = "projects/amsterdam/insar/amsterdam_s1_dsc_t000/stack/decomposition/exports/east_velocity_points.csv"
+up_csv_file = "projects/amsterdam/insar/amsterdam_s1_dsc_t000/stack/decomposition/exports/up_velocity_points.csv"
+east_kmz_file = "projects/amsterdam/insar/amsterdam_s1_dsc_t000/stack/decomposition/exports/east_velocity_points.kmz"
+up_kmz_file = "projects/amsterdam/insar/amsterdam_s1_dsc_t000/stack/decomposition/exports/up_velocity_points.kmz"
+
+[processing.decomposition.raster_viz]
+# Raster quicklooks from decomposition East/Up rasters.
+enabled = false # Enable to export decomposition raster quicklooks.
+geotiff_enabled = true # Write colorized GeoTIFFs for east/up.
+kmz_enabled = true # Write KMZ overlays + legends for east/up.
+output_dir = "projects/amsterdam/insar/amsterdam_s1_dsc_t000/stack/decomposition/exports"
+name_prefix = "amsterdam_decomposition"
+clip_abs_mm_per_year = 10.0
+legend_width_px = 512
+legend_height_px = 40
+east_colorized_tif = "projects/amsterdam/insar/amsterdam_s1_dsc_t000/stack/decomposition/exports/east_velocity_colorized.tif"
+up_colorized_tif = "projects/amsterdam/insar/amsterdam_s1_dsc_t000/stack/decomposition/exports/up_velocity_colorized.tif"
+east_kmz_file = "projects/amsterdam/insar/amsterdam_s1_dsc_t000/stack/decomposition/exports/east_velocity_overlay.kmz"
+up_kmz_file = "projects/amsterdam/insar/amsterdam_s1_dsc_t000/stack/decomposition/exports/up_velocity_overlay.kmz"
+
+[processing.decomposition.track_asc]
+name = "amsterdam_asc"
+velocity_file = "projects/amsterdam/insar/amsterdam_s1_asc_t000/stack/dolphin/timeseries/velocity.tif" # In dual-track setup, point to ASC stack velocity.
+coherence_file = "" # Optional; if blank, decomposition runs without coherence thresholding.
+los_east_coeff = "auto" # Use "auto" to derive from COMPASS incidence/heading rasters.
+los_up_coeff = "auto" # Set both coefficients to "auto" or both numeric.
+
+[processing.decomposition.track_dsc]
+name = "amsterdam_dsc"
+velocity_file = "projects/amsterdam/insar/amsterdam_s1_dsc_t000/stack/dolphin/timeseries/velocity.tif" # In dual-track setup, point to DSC stack velocity.
+coherence_file = "" # Optional descending coherence raster.
+los_east_coeff = "auto" # Use "auto" to derive from COMPASS incidence/heading rasters.
+los_up_coeff = "auto" # Set both coefficients to "auto" or both numeric.
