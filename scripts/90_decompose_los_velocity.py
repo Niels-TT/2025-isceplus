@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import importlib.util
 import json
 import os
 import sys
@@ -59,6 +60,51 @@ class DecompositionConfig:
     write_consistency_error: bool
     velocity_resampling: Resampling
     coherence_resampling: Resampling
+    point_exports: "DecompositionPointExportConfig"
+    raster_viz: "DecompositionRasterVizConfig"
+
+
+@dataclass(frozen=True)
+class DecompositionPointExportConfig:
+    """Optional decomposition point export settings."""
+
+    enabled: bool
+    csv_enabled: bool
+    kmz_enabled: bool
+    output_dir: Path
+    name_prefix: str
+    stride: int
+    max_points: int
+    altitude_scale_m_per_mm_per_year: float
+    color_clip_abs_mm_per_year: float
+    kmz_compact_mode: bool
+    kmz_compact_color_bins: int
+    kmz_compact_max_points_per_placemark: int
+    kmz_use_network_links: bool
+    kmz_region_target_points: int
+    kmz_region_min_lod_pixels: int
+    east_csv_file: Path
+    up_csv_file: Path
+    east_kmz_file: Path
+    up_kmz_file: Path
+
+
+@dataclass(frozen=True)
+class DecompositionRasterVizConfig:
+    """Optional decomposition raster visualization export settings."""
+
+    enabled: bool
+    geotiff_enabled: bool
+    kmz_enabled: bool
+    output_dir: Path
+    name_prefix: str
+    clip_abs_mm_per_year: float
+    legend_width_px: int
+    legend_height_px: int
+    east_colorized_tif: Path
+    up_colorized_tif: Path
+    east_kmz_file: Path
+    up_kmz_file: Path
 
 
 def read_toml(path: Path) -> dict[str, Any]:
@@ -85,6 +131,15 @@ def float_cfg(cfg: dict[str, Any], key: str, default: float) -> float:
     val = cfg.get(key, default)
     try:
         return float(val)
+    except (TypeError, ValueError):
+        return default
+
+
+def int_cfg(cfg: dict[str, Any], key: str, default: int) -> int:
+    """Read integer config value with fallback."""
+    val = cfg.get(key, default)
+    try:
+        return int(val)
     except (TypeError, ValueError):
         return default
 
@@ -118,6 +173,169 @@ def parse_resampling(name: str, default: Resampling) -> Resampling:
         allowed = ", ".join(sorted(mapping))
         raise ValueError(f"Unsupported resampling '{name}'. Allowed: {allowed}")
     return mapping[value]
+
+
+def parse_point_exports_config(
+    *,
+    repo_root: Path,
+    decomp_cfg: dict[str, Any],
+    output_dir: Path,
+) -> DecompositionPointExportConfig:
+    """Parse decomposition point export config."""
+    section = decomp_cfg.get("point_exports", {})
+    if not isinstance(section, dict):
+        section = {}
+
+    enabled = bool_cfg(section, "enabled", False)
+    csv_enabled = bool_cfg(section, "csv_enabled", True)
+    kmz_enabled = bool_cfg(section, "kmz_enabled", True)
+
+    exports_dir = resolve_path(
+        repo_root,
+        str_cfg(section, "output_dir", str(output_dir / "exports")),
+    )
+    name_prefix = str_cfg(section, "name_prefix", "decomposition")
+    stride = max(1, int_cfg(section, "stride", 1))
+    max_points = int_cfg(section, "max_points", 80000)
+    altitude_scale = float_cfg(section, "altitude_scale_m_per_mm_per_year", 3.0)
+    color_clip = float_cfg(section, "color_clip_abs_mm_per_year", 10.0)
+
+    kmz_compact_mode = bool_cfg(section, "kmz_compact_mode", True)
+    kmz_compact_color_bins = max(1, int_cfg(section, "kmz_compact_color_bins", 32))
+    kmz_compact_max_points = max(
+        1, int_cfg(section, "kmz_compact_max_points_per_placemark", 5000)
+    )
+    kmz_use_network_links = bool_cfg(section, "kmz_use_network_links", True)
+    kmz_region_target_points = max(1, int_cfg(section, "kmz_region_target_points", 2000))
+    kmz_region_min_lod_pixels = max(0, int_cfg(section, "kmz_region_min_lod_pixels", 0))
+
+    east_csv_file = resolve_path(
+        repo_root,
+        str_cfg(
+            section,
+            "east_csv_file",
+            str(exports_dir / "east_velocity_points.csv"),
+        ),
+    )
+    up_csv_file = resolve_path(
+        repo_root,
+        str_cfg(
+            section,
+            "up_csv_file",
+            str(exports_dir / "up_velocity_points.csv"),
+        ),
+    )
+    east_kmz_file = resolve_path(
+        repo_root,
+        str_cfg(
+            section,
+            "east_kmz_file",
+            str(exports_dir / "east_velocity_points.kmz"),
+        ),
+    )
+    up_kmz_file = resolve_path(
+        repo_root,
+        str_cfg(
+            section,
+            "up_kmz_file",
+            str(exports_dir / "up_velocity_points.kmz"),
+        ),
+    )
+
+    return DecompositionPointExportConfig(
+        enabled=enabled,
+        csv_enabled=csv_enabled,
+        kmz_enabled=kmz_enabled,
+        output_dir=exports_dir,
+        name_prefix=name_prefix,
+        stride=stride,
+        max_points=max_points,
+        altitude_scale_m_per_mm_per_year=altitude_scale,
+        color_clip_abs_mm_per_year=color_clip,
+        kmz_compact_mode=kmz_compact_mode,
+        kmz_compact_color_bins=kmz_compact_color_bins,
+        kmz_compact_max_points_per_placemark=kmz_compact_max_points,
+        kmz_use_network_links=kmz_use_network_links,
+        kmz_region_target_points=kmz_region_target_points,
+        kmz_region_min_lod_pixels=kmz_region_min_lod_pixels,
+        east_csv_file=east_csv_file,
+        up_csv_file=up_csv_file,
+        east_kmz_file=east_kmz_file,
+        up_kmz_file=up_kmz_file,
+    )
+
+
+def parse_raster_viz_config(
+    *,
+    repo_root: Path,
+    decomp_cfg: dict[str, Any],
+    output_dir: Path,
+) -> DecompositionRasterVizConfig:
+    """Parse decomposition raster visualization config."""
+    section = decomp_cfg.get("raster_viz", {})
+    if not isinstance(section, dict):
+        section = {}
+
+    enabled = bool_cfg(section, "enabled", False)
+    geotiff_enabled = bool_cfg(section, "geotiff_enabled", True)
+    kmz_enabled = bool_cfg(section, "kmz_enabled", True)
+
+    exports_dir = resolve_path(
+        repo_root,
+        str_cfg(section, "output_dir", str(output_dir / "exports")),
+    )
+    name_prefix = str_cfg(section, "name_prefix", "decomposition")
+    clip_abs_mm_per_year = float_cfg(section, "clip_abs_mm_per_year", 10.0)
+    legend_width_px = max(64, int_cfg(section, "legend_width_px", 512))
+    legend_height_px = max(16, int_cfg(section, "legend_height_px", 40))
+
+    east_colorized_tif = resolve_path(
+        repo_root,
+        str_cfg(
+            section,
+            "east_colorized_tif",
+            str(exports_dir / "east_velocity_colorized.tif"),
+        ),
+    )
+    up_colorized_tif = resolve_path(
+        repo_root,
+        str_cfg(
+            section,
+            "up_colorized_tif",
+            str(exports_dir / "up_velocity_colorized.tif"),
+        ),
+    )
+    east_kmz_file = resolve_path(
+        repo_root,
+        str_cfg(
+            section,
+            "east_kmz_file",
+            str(exports_dir / "east_velocity_overlay.kmz"),
+        ),
+    )
+    up_kmz_file = resolve_path(
+        repo_root,
+        str_cfg(
+            section,
+            "up_kmz_file",
+            str(exports_dir / "up_velocity_overlay.kmz"),
+        ),
+    )
+
+    return DecompositionRasterVizConfig(
+        enabled=enabled,
+        geotiff_enabled=geotiff_enabled,
+        kmz_enabled=kmz_enabled,
+        output_dir=exports_dir,
+        name_prefix=name_prefix,
+        clip_abs_mm_per_year=clip_abs_mm_per_year,
+        legend_width_px=legend_width_px,
+        legend_height_px=legend_height_px,
+        east_colorized_tif=east_colorized_tif,
+        up_colorized_tif=up_colorized_tif,
+        east_kmz_file=east_kmz_file,
+        up_kmz_file=up_kmz_file,
+    )
 
 
 def parse_track(
@@ -403,6 +621,16 @@ def parse_config(repo_root: Path, config_path: Path) -> DecompositionConfig:
         str_cfg(decomp, "coherence_resampling", "bilinear"),
         default=Resampling.bilinear,
     )
+    point_exports = parse_point_exports_config(
+        repo_root=repo_root,
+        decomp_cfg=decomp,
+        output_dir=output_dir,
+    )
+    raster_viz = parse_raster_viz_config(
+        repo_root=repo_root,
+        decomp_cfg=decomp,
+        output_dir=output_dir,
+    )
 
     return DecompositionConfig(
         enabled=enabled,
@@ -415,6 +643,8 @@ def parse_config(repo_root: Path, config_path: Path) -> DecompositionConfig:
         write_consistency_error=write_consistency_error,
         velocity_resampling=velocity_resampling,
         coherence_resampling=coherence_resampling,
+        point_exports=point_exports,
+        raster_viz=raster_viz,
     )
 
 
@@ -478,6 +708,248 @@ def build_uint8_profile(profile: dict[str, Any]) -> dict[str, Any]:
         }
     )
     return out
+
+
+_HELPER_MODULE_CACHE: dict[str, Any] = {}
+
+
+def load_script_module(script_name: str, module_name: str) -> Any:
+    """Dynamically load a helper module from scripts/."""
+    cache_key = f"{script_name}:{module_name}"
+    cached = _HELPER_MODULE_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+
+    script_path = Path(__file__).with_name(script_name)
+    if not script_path.exists():
+        raise FileNotFoundError(f"Missing helper script: {script_path}")
+
+    script_dir = str(script_path.parent)
+    if script_dir not in sys.path:
+        sys.path.insert(0, script_dir)
+
+    spec = importlib.util.spec_from_file_location(module_name, script_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Unable to load module from {script_path}")
+
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    _HELPER_MODULE_CACHE[cache_key] = module
+    return module
+
+
+def write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
+    """Write JSON atomically to avoid partial files."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def run_raster_viz_exports(
+    *,
+    cfg: DecompositionRasterVizConfig,
+    east_file: Path,
+    up_file: Path,
+    config_path: Path,
+) -> dict[str, Any]:
+    """Export decomposition East/Up rasters to colorized GeoTIFF and KMZ."""
+    if not cfg.enabled:
+        return {"enabled": False}
+    if not cfg.geotiff_enabled and not cfg.kmz_enabled:
+        return {
+            "enabled": True,
+            "geotiff_enabled": False,
+            "kmz_enabled": False,
+            "reason": "both_outputs_disabled",
+        }
+
+    helper = load_script_module(
+        "13_export_dolphin_raster_viz.py",
+        "_decomposition_raster_viz_helper",
+    )
+    cfg.output_dir.mkdir(parents=True, exist_ok=True)
+
+    components = [
+        ("east", east_file, cfg.east_colorized_tif, cfg.east_kmz_file),
+        ("up", up_file, cfg.up_colorized_tif, cfg.up_kmz_file),
+    ]
+    component_results: dict[str, Any] = {}
+
+    for comp, velocity_file, colorized_tif, kmz_file in components:
+        if not velocity_file.exists():
+            raise FileNotFoundError(f"Missing decomposition {comp} raster: {velocity_file}")
+
+        print(
+            f"Decomposition raster viz ({comp}): "
+            f"geotiff={cfg.geotiff_enabled} -> {colorized_tif}, "
+            f"kmz={cfg.kmz_enabled} -> {kmz_file}"
+        )
+
+        with rasterio.open(velocity_file) as ds:
+            vel = ds.read(1).astype(np.float32)
+            nodata = ds.nodata
+            valid = np.isfinite(vel)
+            if nodata is not None and np.isfinite(nodata):
+                valid &= vel != nodata
+
+            rgba = helper.colorize_velocity(
+                velocity_m_yr=vel,
+                valid_mask=valid,
+                clip_abs_mm_yr=cfg.clip_abs_mm_per_year,
+            )
+
+            if cfg.geotiff_enabled:
+                helper.write_colorized_geotiff(rgba, colorized_tif, ds.profile)
+
+            if cfg.kmz_enabled:
+                src_bounds = (ds.bounds.left, ds.bounds.bottom, ds.bounds.right, ds.bounds.top)
+                rgba_wgs84, wgs84_bounds = helper.reproject_rgba_to_wgs84(
+                    rgba=rgba,
+                    src_crs=ds.crs,
+                    src_transform=ds.transform,
+                    src_width=ds.width,
+                    src_height=ds.height,
+                    src_bounds=src_bounds,
+                )
+                helper.write_kmz_overlay(
+                    overlay_rgba_wgs84=rgba_wgs84,
+                    bounds_wgs84=wgs84_bounds,
+                    out_kmz=kmz_file,
+                    name_prefix=f"{cfg.name_prefix}_{comp}",
+                    clip_abs_mm_yr=cfg.clip_abs_mm_per_year,
+                    legend_width_px=cfg.legend_width_px,
+                    legend_height_px=cfg.legend_height_px,
+                )
+
+        component_results[comp] = {
+            "velocity_file": str(velocity_file),
+            "colorized_tif": str(colorized_tif) if cfg.geotiff_enabled else None,
+            "kmz_file": str(kmz_file) if cfg.kmz_enabled else None,
+        }
+
+    summary = {
+        "exported_utc": datetime.now(timezone.utc).isoformat(),
+        "config": str(config_path),
+        "enabled": True,
+        "geotiff_enabled": cfg.geotiff_enabled,
+        "kmz_enabled": cfg.kmz_enabled,
+        "clip_abs_mm_per_year": cfg.clip_abs_mm_per_year,
+        "legend_width_px": cfg.legend_width_px,
+        "legend_height_px": cfg.legend_height_px,
+        "name_prefix": cfg.name_prefix,
+        "components": component_results,
+    }
+    summary_path = cfg.output_dir / "decomposition_raster_viz_summary.json"
+    write_json_atomic(summary_path, summary)
+    print(f"Decomposition raster viz summary: {summary_path}")
+    summary["summary_file"] = str(summary_path)
+    return summary
+
+
+def run_point_exports(
+    *,
+    cfg: DecompositionPointExportConfig,
+    east_file: Path,
+    up_file: Path,
+    config_path: Path,
+) -> dict[str, Any]:
+    """Export decomposition East/Up rasters to CSV + KMZ point products."""
+    if not cfg.enabled:
+        return {"enabled": False}
+    if not cfg.csv_enabled and not cfg.kmz_enabled:
+        return {
+            "enabled": True,
+            "csv_enabled": False,
+            "kmz_enabled": False,
+            "reason": "both_outputs_disabled",
+        }
+
+    helper = load_script_module(
+        "12_export_dolphin_points.py",
+        "_decomposition_point_export_helper",
+    )
+    cfg.output_dir.mkdir(parents=True, exist_ok=True)
+
+    components = [
+        ("east", east_file, cfg.east_csv_file, cfg.east_kmz_file),
+        ("up", up_file, cfg.up_csv_file, cfg.up_kmz_file),
+    ]
+    component_results: dict[str, Any] = {}
+
+    for comp, velocity_file, csv_file, kmz_file in components:
+        if not velocity_file.exists():
+            raise FileNotFoundError(f"Missing decomposition {comp} raster: {velocity_file}")
+
+        print(
+            f"Decomposition point export ({comp}): "
+            f"csv={cfg.csv_enabled} -> {csv_file}, "
+            f"kmz={cfg.kmz_enabled} -> {kmz_file}"
+        )
+
+        points, stats = helper.select_points(
+            velocity_file=velocity_file,
+            coherence_file=None,
+            ps_mask_file=None,
+            min_temporal_coherence=0.0,
+            use_ps_mask=False,
+            stride=cfg.stride,
+            max_points=cfg.max_points,
+            strict_grid_match=False,
+        )
+
+        if cfg.csv_enabled:
+            helper.write_csv(
+                points,
+                csv_file,
+                altitude_scale=cfg.altitude_scale_m_per_mm_per_year,
+            )
+        if cfg.kmz_enabled:
+            helper.write_kmz(
+                points=points,
+                out_kmz=kmz_file,
+                altitude_scale=cfg.altitude_scale_m_per_mm_per_year,
+                clip_abs_mm_yr=cfg.color_clip_abs_mm_per_year,
+                name_prefix=f"{cfg.name_prefix}_{comp}",
+                compact_mode=cfg.kmz_compact_mode,
+                compact_color_bins=cfg.kmz_compact_color_bins,
+                compact_max_points_per_placemark=cfg.kmz_compact_max_points_per_placemark,
+                use_network_links=cfg.kmz_use_network_links,
+                region_target_points=cfg.kmz_region_target_points,
+                region_min_lod_pixels=cfg.kmz_region_min_lod_pixels,
+            )
+
+        component_results[comp] = {
+            "velocity_file": str(velocity_file),
+            "csv_file": str(csv_file) if cfg.csv_enabled else None,
+            "kmz_file": str(kmz_file) if cfg.kmz_enabled else None,
+            "stats": stats,
+        }
+
+    summary = {
+        "exported_utc": datetime.now(timezone.utc).isoformat(),
+        "config": str(config_path),
+        "enabled": True,
+        "csv_enabled": cfg.csv_enabled,
+        "kmz_enabled": cfg.kmz_enabled,
+        "stride": cfg.stride,
+        "max_points": cfg.max_points,
+        "altitude_scale_m_per_mm_per_year": cfg.altitude_scale_m_per_mm_per_year,
+        "color_clip_abs_mm_per_year": cfg.color_clip_abs_mm_per_year,
+        "kmz_compact_mode": cfg.kmz_compact_mode,
+        "kmz_compact_color_bins": cfg.kmz_compact_color_bins,
+        "kmz_compact_max_points_per_placemark": cfg.kmz_compact_max_points_per_placemark,
+        "kmz_use_network_links": cfg.kmz_use_network_links,
+        "kmz_region_target_points": cfg.kmz_region_target_points,
+        "kmz_region_min_lod_pixels": cfg.kmz_region_min_lod_pixels,
+        "name_prefix": cfg.name_prefix,
+        "components": component_results,
+    }
+    summary_path = cfg.output_dir / "decomposition_point_export_summary.json"
+    write_json_atomic(summary_path, summary)
+    print(f"Decomposition point export summary: {summary_path}")
+    summary["summary_file"] = str(summary_path)
+    return summary
 
 
 def run_decomposition(
@@ -548,6 +1020,26 @@ def run_decomposition(
     print(f"Planned output up: {up_out}")
     if cfg.write_consistency_error:
         print(f"Planned output consistency error: {consistency_out}")
+    if cfg.raster_viz.enabled:
+        print(
+            "Planned decomposition raster viz: "
+            f"east_tif={cfg.raster_viz.east_colorized_tif}, "
+            f"up_tif={cfg.raster_viz.up_colorized_tif}, "
+            f"east_kmz={cfg.raster_viz.east_kmz_file}, "
+            f"up_kmz={cfg.raster_viz.up_kmz_file}"
+        )
+    else:
+        print("Planned decomposition raster viz: disabled")
+    if cfg.point_exports.enabled:
+        print(
+            "Planned decomposition point exports: "
+            f"east_csv={cfg.point_exports.east_csv_file}, "
+            f"up_csv={cfg.point_exports.up_csv_file}, "
+            f"east_kmz={cfg.point_exports.east_kmz_file}, "
+            f"up_kmz={cfg.point_exports.up_kmz_file}"
+        )
+    else:
+        print("Planned decomposition point exports: disabled")
 
     if dry_run:
         return 0
@@ -692,6 +1184,19 @@ def run_decomposition(
         finally:
             progress.close()
 
+    raster_viz_summary = run_raster_viz_exports(
+        cfg=cfg.raster_viz,
+        east_file=east_out,
+        up_file=up_out,
+        config_path=config_path,
+    )
+    point_export_summary = run_point_exports(
+        cfg=cfg.point_exports,
+        east_file=east_out,
+        up_file=up_out,
+        config_path=config_path,
+    )
+
     summary = {
         "created_utc": datetime.now(timezone.utc).isoformat(),
         "config": str(config_path),
@@ -736,11 +1241,13 @@ def run_decomposition(
             "condition_number": str(cond_out),
             "consistency_error_m_per_year": str(consistency_out) if cfg.write_consistency_error else None,
         },
+        "exports": {
+            "raster_viz": raster_viz_summary,
+            "point_exports": point_export_summary,
+        },
     }
 
-    tmp = summary_out.with_suffix(summary_out.suffix + ".tmp")
-    tmp.write_text(json.dumps(summary, indent=2), encoding="utf-8")
-    os.replace(tmp, summary_out)
+    write_json_atomic(summary_out, summary)
 
     print("Decomposition completed.")
     print(f"East velocity: {east_out}")

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 import tempfile
 import unittest
@@ -263,6 +264,115 @@ class LOSDecompositionTests(unittest.TestCase):
             self.assertAlmostEqual(cfg.asc.los_up_coeff, asc_expected_up, places=6)
             self.assertAlmostEqual(cfg.dsc.los_east_coeff, dsc_expected_east, places=6)
             self.assertAlmostEqual(cfg.dsc.los_up_coeff, dsc_expected_up, places=6)
+
+    def test_run_decomposition_with_exports(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            asc_vel = root / "asc_velocity.tif"
+            dsc_vel = root / "dsc_velocity.tif"
+
+            asc_e, asc_u = -0.62, 0.78
+            dsc_e, dsc_u = 0.62, 0.78
+            east_true = np.array(
+                [
+                    [0.001, 0.002, 0.003],
+                    [0.000, -0.001, -0.002],
+                    [0.004, 0.003, 0.002],
+                ],
+                dtype=np.float32,
+            )
+            up_true = np.array(
+                [
+                    [0.005, 0.004, 0.003],
+                    [0.002, 0.001, 0.000],
+                    [-0.001, -0.002, -0.003],
+                ],
+                dtype=np.float32,
+            )
+            asc_los = asc_e * east_true + asc_u * up_true
+            dsc_los = dsc_e * east_true + dsc_u * up_true
+
+            self._write_raster(asc_vel, asc_los)
+            self._write_raster(dsc_vel, dsc_los)
+
+            config = root / "config.toml"
+            config.write_text(
+                "\n".join(
+                    [
+                        "[processing.decomposition]",
+                        "enabled = true",
+                        "output_dir = 'decomp'",
+                        "target_grid = 'asc'",
+                        "min_temporal_coherence = 0.0",
+                        "max_condition_number = 100.0",
+                        "write_consistency_error = true",
+                        "velocity_resampling = 'bilinear'",
+                        "coherence_resampling = 'bilinear'",
+                        "",
+                        "[processing.decomposition.track_asc]",
+                        "name = 'asc'",
+                        "velocity_file = 'asc_velocity.tif'",
+                        "coherence_file = ''",
+                        f"los_east_coeff = {asc_e}",
+                        f"los_up_coeff = {asc_u}",
+                        "",
+                        "[processing.decomposition.track_dsc]",
+                        "name = 'dsc'",
+                        "velocity_file = 'dsc_velocity.tif'",
+                        "coherence_file = ''",
+                        f"los_east_coeff = {dsc_e}",
+                        f"los_up_coeff = {dsc_u}",
+                        "",
+                        "[processing.decomposition.raster_viz]",
+                        "enabled = true",
+                        "geotiff_enabled = true",
+                        "kmz_enabled = true",
+                        "output_dir = 'decomp/exports'",
+                        "clip_abs_mm_per_year = 10.0",
+                        "name_prefix = 'test_decomp'",
+                        "east_colorized_tif = 'decomp/exports/east_colorized.tif'",
+                        "up_colorized_tif = 'decomp/exports/up_colorized.tif'",
+                        "east_kmz_file = 'decomp/exports/east_overlay.kmz'",
+                        "up_kmz_file = 'decomp/exports/up_overlay.kmz'",
+                        "",
+                        "[processing.decomposition.point_exports]",
+                        "enabled = true",
+                        "csv_enabled = true",
+                        "kmz_enabled = true",
+                        "output_dir = 'decomp/exports'",
+                        "name_prefix = 'test_decomp'",
+                        "stride = 1",
+                        "max_points = 100",
+                        "color_clip_abs_mm_per_year = 10.0",
+                        "east_csv_file = 'decomp/exports/east_points.csv'",
+                        "up_csv_file = 'decomp/exports/up_points.csv'",
+                        "east_kmz_file = 'decomp/exports/east_points.kmz'",
+                        "up_kmz_file = 'decomp/exports/up_points.kmz'",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            cfg = self.decomp.parse_config(repo_root=root, config_path=config)
+            rc = self.decomp.run_decomposition(cfg=cfg, config_path=config, dry_run=False)
+            self.assertEqual(rc, 0)
+
+            out_dir = root / "decomp" / "exports"
+            self.assertTrue((out_dir / "east_colorized.tif").exists())
+            self.assertTrue((out_dir / "up_colorized.tif").exists())
+            self.assertTrue((out_dir / "east_overlay.kmz").exists())
+            self.assertTrue((out_dir / "up_overlay.kmz").exists())
+            self.assertTrue((out_dir / "east_points.csv").exists())
+            self.assertTrue((out_dir / "up_points.csv").exists())
+            self.assertTrue((out_dir / "east_points.kmz").exists())
+            self.assertTrue((out_dir / "up_points.kmz").exists())
+            self.assertTrue((out_dir / "decomposition_raster_viz_summary.json").exists())
+            self.assertTrue((out_dir / "decomposition_point_export_summary.json").exists())
+
+            decomp_summary = json.loads((root / "decomp" / "decomposition_summary.json").read_text())
+            self.assertIn("exports", decomp_summary)
+            self.assertTrue(decomp_summary["exports"]["raster_viz"]["enabled"])
+            self.assertTrue(decomp_summary["exports"]["point_exports"]["enabled"])
 
 
 if __name__ == "__main__":

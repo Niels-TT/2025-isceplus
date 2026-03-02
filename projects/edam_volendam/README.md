@@ -144,6 +144,9 @@ You can also pass:
 `projects/edam_volendam/insar/edam_volendam_s1_dsc_t000/config/processing_configuration.toml`
 Decomposition settings in both files are cross-wired to ASC+DSC velocity outputs.
 Naming note: `90_` is used for optional end-of-pipeline utilities, separate from core run-order stages.
+If `[processing.decomposition.point_exports]` and/or `[processing.decomposition.raster_viz]`
+are enabled, `90_decompose_los_velocity.py` also writes decomposition CSV/KMZ points and
+decomposition raster quicklook KMZ/GeoTIFF products automatically.
 
 ## Troubleshooting
 - `04_suggest_reference_date.py` says `Missing scenes CSV`:

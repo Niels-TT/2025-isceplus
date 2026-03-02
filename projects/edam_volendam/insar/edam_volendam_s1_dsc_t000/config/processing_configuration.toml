@@ -303,6 +303,43 @@ write_consistency_error = true # Writes residual LOS reconstruction error raster
 velocity_resampling = "bilinear" # Resampling for cross-track velocity reprojection.
 coherence_resampling = "bilinear" # Resampling for cross-track coherence reprojection.
 
+[processing.decomposition.point_exports]
+# Point deliverables from decomposition East/Up rasters.
+enabled = true # Auto-export decomposition points after 90_decompose_los_velocity.py.
+csv_enabled = true # Write tabular decomposition points (east/up).
+kmz_enabled = true # Write Google Earth point KMZ files (east/up).
+output_dir = "projects/edam_volendam/insar/edam_volendam_s1_dsc_t000/stack/decomposition/exports"
+name_prefix = "edam_volendam_decomposition"
+stride = 1
+max_points = 80000
+altitude_scale_m_per_mm_per_year = 3.0
+color_clip_abs_mm_per_year = 10.0
+kmz_compact_mode = true
+kmz_compact_color_bins = 32
+kmz_compact_max_points_per_placemark = 5000
+kmz_use_network_links = true
+kmz_region_target_points = 2000
+kmz_region_min_lod_pixels = 0
+east_csv_file = "projects/edam_volendam/insar/edam_volendam_s1_dsc_t000/stack/decomposition/exports/east_velocity_points.csv"
+up_csv_file = "projects/edam_volendam/insar/edam_volendam_s1_dsc_t000/stack/decomposition/exports/up_velocity_points.csv"
+east_kmz_file = "projects/edam_volendam/insar/edam_volendam_s1_dsc_t000/stack/decomposition/exports/east_velocity_points.kmz"
+up_kmz_file = "projects/edam_volendam/insar/edam_volendam_s1_dsc_t000/stack/decomposition/exports/up_velocity_points.kmz"
+
+[processing.decomposition.raster_viz]
+# Raster quicklooks from decomposition East/Up rasters.
+enabled = true # Auto-export decomposition raster quicklooks after 90_decompose_los_velocity.py.
+geotiff_enabled = true # Write colorized GeoTIFFs for east/up.
+kmz_enabled = true # Write KMZ overlays + legends for east/up.
+output_dir = "projects/edam_volendam/insar/edam_volendam_s1_dsc_t000/stack/decomposition/exports"
+name_prefix = "edam_volendam_decomposition"
+clip_abs_mm_per_year = 10.0
+legend_width_px = 512
+legend_height_px = 40
+east_colorized_tif = "projects/edam_volendam/insar/edam_volendam_s1_dsc_t000/stack/decomposition/exports/east_velocity_colorized.tif"
+up_colorized_tif = "projects/edam_volendam/insar/edam_volendam_s1_dsc_t000/stack/decomposition/exports/up_velocity_colorized.tif"
+east_kmz_file = "projects/edam_volendam/insar/edam_volendam_s1_dsc_t000/stack/decomposition/exports/east_velocity_overlay.kmz"
+up_kmz_file = "projects/edam_volendam/insar/edam_volendam_s1_dsc_t000/stack/decomposition/exports/up_velocity_overlay.kmz"
+
 [processing.decomposition.track_asc]
 name = "edam_volendam_asc"
 velocity_file = "projects/edam_volendam/insar/edam_volendam_s1_asc_t000/stack/dolphin/timeseries/velocity.tif" # In dual-track setup, point to ASC stack velocity.

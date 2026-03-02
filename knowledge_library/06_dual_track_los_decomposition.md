@@ -39,6 +39,9 @@ Key controls:
 - `target_grid`: `asc` or `dsc`
 - `min_temporal_coherence`: quality threshold (when coherence files exist)
 - `max_condition_number`: geometry safety check
+- Optional decomposition exports:
+  - `[processing.decomposition.point_exports]` for CSV/KMZ points from east/up rasters.
+  - `[processing.decomposition.raster_viz]` for colorized GeoTIFF + KMZ overlays from east/up rasters.
 
 ## Run It
 Manual run:
@@ -63,6 +66,14 @@ Written to `[processing.decomposition].output_dir`:
 - `condition_number.tif`
 - `consistency_error_m_per_year.tif` (if enabled)
 - `decomposition_summary.json`
+
+Optional export outputs (when enabled) are written to each export `output_dir`:
+- `east_velocity_points.csv` / `up_velocity_points.csv`
+- `east_velocity_points.kmz` / `up_velocity_points.kmz`
+- `east_velocity_colorized.tif` / `up_velocity_colorized.tif`
+- `east_velocity_overlay.kmz` / `up_velocity_overlay.kmz`
+- `decomposition_point_export_summary.json`
+- `decomposition_raster_viz_summary.json`
 
 ## Quality Checklist
 1. Check `decomposition_summary.json` for condition number and valid fraction.
