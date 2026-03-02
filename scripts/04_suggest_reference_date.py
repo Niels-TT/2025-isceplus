@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import shlex
 import statistics
 import sys
 import tomllib
@@ -91,6 +92,15 @@ def infer_geojson_path_from_scenes_csv(scenes_csv: Path) -> Path:
     # Expected:
     # .../search/products/scenes.csv -> .../search/raw/results.geojson
     return scenes_csv.parent.parent / "raw" / "results.geojson"
+
+
+def build_search_command(repo_root_arg: str, config_arg: str) -> str:
+    """Build a copy/paste stack-search command for a specific config."""
+    return (
+        "mamba run -n isce3-feb python scripts/03_search_s1_stack.py "
+        f"--repo-root {shlex.quote(repo_root_arg)} "
+        f"--config {shlex.quote(config_arg)}"
+    )
 
 
 def parse_scene_file_id_map(path: Path) -> dict[str, str]:
@@ -303,6 +313,15 @@ def main() -> int:
             scenes_csv = resolve_path(repo_root, root_value) / meta_value
 
     if scenes_csv is None:
+        if args.config:
+            search_cmd = build_search_command(args.repo_root, args.config)
+            print(
+                "Missing scenes CSV. Run stack search first for this config:\n"
+                f"  {search_cmd}\n"
+                "Then re-run this command.",
+                file=sys.stderr,
+            )
+            return 2
         print(
             "Missing scenes CSV. Run scripts/03_search_s1_stack.py first, then re-run this command "
             "with --config (or pass --scenes-csv explicitly).",
@@ -310,9 +329,14 @@ def main() -> int:
         )
         return 2
     if not scenes_csv.exists():
+        search_hint = ""
+        if args.config:
+            search_cmd = build_search_command(args.repo_root, args.config)
+            search_hint = f"\nRun:\n  {search_cmd}"
         print(
             f"Missing scenes CSV: {scenes_csv}\n"
-            "Run scripts/03_search_s1_stack.py first to generate search/products/scenes.csv.",
+            "Run scripts/03_search_s1_stack.py first to generate search/products/scenes.csv."
+            f"{search_hint}",
             file=sys.stderr,
         )
         return 2

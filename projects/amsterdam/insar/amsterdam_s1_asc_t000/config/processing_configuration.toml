@@ -26,7 +26,7 @@ frame_number = 0 # Optional frame filter (integer); set >0 to pick one frame, ke
 start = "2025-07-21"
 end = "2026-03-02"
 # Replace after first search + scripts/04_suggest_reference_date.py.
-reference_date = "2023-09-21"
+reference_date = "2025-10-19"
 # Optional count guards (0 disables check; >0 enforces exact expected counts).
 expected_scenes = 0
 expected_unique_dates = 0

@@ -1,113 +1,75 @@
-# amsterdam Project Workflow
+# amsterdam Workflow
 
-Why: this folder is a reusable scaffold for any local InSAR project using the same pipeline (`asf_search -> download -> DEM -> COMPASS -> Dolphin`).
+This runbook is for the existing Amsterdam dual-track project.
+Run all commands from repo root:
 
-## Prerequisites
-1. Use WSL2/Linux and open the repo from a Linux path (`/home/...`).
-2. Install/update the conda environment and activate it:
+```bash
+cd /home/niels/insar/git/2025-isceplus
+```
+
+## 1) Environment + Credentials
+Why: most first-run failures are missing dependencies or credentials.
 
 ```bash
 mamba env update -n isce3-feb -f envs/isce3-feb.yml
 conda activate isce3-feb
-```
-
-3. Confirm credentials:
-
-```bash
+python scripts/00_patch_rasterio_float16.py
 bash scripts/00_check_credentials.sh
 ```
 
-## Quick Start
-1. Create a new project from this template:
+## 2) AOI + Config Sanity
+Project AOI file:
+- `projects/amsterdam/aux/bbox.kml`
 
-```bash
-python scripts/01_create_project_from_example.py \
-  --repo-root . \
-  --project-name amsterdam
-```
+Stack configs:
+- `projects/amsterdam/insar/amsterdam_s1_asc_t000/config/processing_configuration.toml`
+- `projects/amsterdam/insar/amsterdam_s1_dsc_t000/config/processing_configuration.toml`
 
-Why: this avoids manual path mistakes and keeps all config references consistent.
+Before first search, check:
+- `[aoi].buffer_m` is set (keep equal between ASC/DSC for consistent decomposition coverage).
+- `[search].start` and `[search].end` are correct.
+- `[search].flight_direction` is `ASCENDING` for ASC config and `DESCENDING` for DSC config.
+- `[search].relative_orbit` and `[search].frame_number` are set from discovery.
+- `[selection].require_reference = false` for first pass.
+- `[search].expected_scenes = 0` and `[search].expected_unique_dates = 0` for first pass.
 
-2. Open your new project folder (default location: `projects/amsterdam`).
-   It includes a project-local `.gitignore` that keeps heavy products out of git
-   while leaving config/AOI/README files trackable.
-
-3. Replace `projects/amsterdam/aux/bbox.kml` with your AOI KML from Google Earth Pro.
-   Use KML (not KMZ). KML coordinates are lon/lat in WGS84 (`EPSG:4326`).
-
-Why: the AOI KML is the source of truth for search, DEM bounds, and processing crop.
-
-4. Edit:
-`projects/amsterdam/insar/amsterdam_s1_asc_t000/config/processing_configuration.toml`
-
-Set at minimum:
-- `[aoi] buffer_m` (default `3000.0`; processing/search buffer in meters)
-- `[search] flight_direction` (`ASCENDING` or `DESCENDING`, one per stack config)
-- `[search] start`, `end`
-- `[search] relative_orbit` (after discovery)
-- `[search] frame_number` (integer; use when one orbit has multiple frames, keep `0` for all frames)
-- `[search] reference_date` (after stack search + suggestion)
-- `[selection] max_dates`
-- `[search] expected_scenes`, `[search] expected_unique_dates` (`0` disables checks; set >0 to enforce exact counts)
-
-AOI buffer policy:
-- The project AOI (`aoi.kml`) is your analysis footprint.
-- `aoi.buffer_m` expands that AOI for discovery/search/DEM/coreg to reduce edge effects.
-- Final Dolphin products are cropped back to the project AOI when `processing.dolphin.crop_to_project_aoi = true` (default).
-
-Optional: create ASC+DSC stacks in one command for decomposition workflows:
-
-```bash
-python scripts/01_create_project_from_example.py \
-  --repo-root . \
-  --project-name amsterdam \
-  --dual-track
-```
-
-This creates:
-- `projects/amsterdam/insar/amsterdam_s1_asc_t000/...` (`flight_direction = ASCENDING`)
-- `projects/amsterdam/insar/amsterdam_s1_dsc_t000/...` (`flight_direction = DESCENDING`)
-
-## Geometry Discovery (Before Final Orbit Choice)
-Run candidate discovery before locking direction/orbit/frame.
-For dual-track projects with one shared AOI/date window, run this once only:
+## 3) Optional Geometry Discovery (Orbit/Frame Selection)
+Run once for this AOI/date window:
 
 ```bash
 mamba run -n isce3-feb python scripts/02_discover_s1_candidates.py \
   --repo-root . \
-  --config projects/amsterdam/insar/amsterdam_s1_asc_t000/config/processing_configuration.toml
+  --config projects/amsterdam/insar/amsterdam_s1_asc_t000/config/processing_configuration.toml \
+  --min-unique-dates 1
 ```
 
-Why: this ranks available acquisition geometries by temporal coverage so you can choose the most stable stack setup.
-It also writes a visual map:
-- `.../search/candidates/stack_candidates.png`
-showing AOI vs all discovered stack footprints.
-Discovery uses the buffered AOI (`aoi.buffer_m`) for the ASF query.
+Outputs:
+- `projects/amsterdam/insar/amsterdam_s1_asc_t000/search/candidates/geometry_candidates.csv`
+- `projects/amsterdam/insar/amsterdam_s1_asc_t000/search/candidates/geometry_candidates.json`
+- `projects/amsterdam/insar/amsterdam_s1_asc_t000/search/candidates/stack_candidates.png`
 
-After choosing geometry, update `[search]` fields:
-- `flight_direction`
-- `relative_orbit`
+Pick one ASC geometry and one DSC geometry, then update both config files with `relative_orbit` and `frame_number`.
 
-If you already know direction/orbit/frame for this AOI, skip discovery and go
-straight to stack search (`03_search_s1_stack.py`).
+## 4) Mandatory Stack Search (Creates `scenes.csv`)
+Why: this creates deterministic scene manifests required by all downstream steps.
 
-Burst note:
-- This discovery stage is scene/frame-level.
-- Burst-level intersection is resolved during COMPASS preparation via `common_bursts_only=true`.
-- For small AOIs, this is usually the safest approach because all dates are trimmed to common bursts automatically.
-
-## Reference Date Suggestion
-After stack search (this creates `search/products/scenes.csv`), suggest a robust reference date.
-Why: reference-date choice affects network conditioning and baseline spread in later inversion.
-
-Single-stack project:
 ```bash
-mamba run -n isce3-feb python scripts/04_suggest_reference_date.py \
+mamba run -n isce3-feb python scripts/03_search_s1_stack.py \
   --repo-root . \
   --config projects/amsterdam/insar/amsterdam_s1_asc_t000/config/processing_configuration.toml
+
+mamba run -n isce3-feb python scripts/03_search_s1_stack.py \
+  --repo-root . \
+  --config projects/amsterdam/insar/amsterdam_s1_dsc_t000/config/processing_configuration.toml
 ```
 
-Dual-track project (run once per stack):
+Check these files exist:
+- `projects/amsterdam/insar/amsterdam_s1_asc_t000/search/products/scenes.csv`
+- `projects/amsterdam/insar/amsterdam_s1_dsc_t000/search/products/scenes.csv`
+
+## 5) Suggest + Set Reference Dates
+Why: reference-date choice affects inversion conditioning and baseline spread.
+
 ```bash
 mamba run -n isce3-feb python scripts/04_suggest_reference_date.py \
   --repo-root . \
@@ -118,98 +80,110 @@ mamba run -n isce3-feb python scripts/04_suggest_reference_date.py \
   --config projects/amsterdam/insar/amsterdam_s1_dsc_t000/config/processing_configuration.toml
 ```
 
-This ranking uses temporal support plus perpendicular-baseline centering; it is a practical heuristic, not a full geophysical quality metric.
+Then update `[search].reference_date` in both config files.
 
-## Full Run Order (Any Project)
-Use your own config path in every command.
+Optional hardening after first pass:
+- Set `[selection].require_reference = true`.
+- Set `[search].expected_scenes` and `[search].expected_unique_dates` to exact values.
+- Re-run step 4 to verify deterministic counts.
 
-1. Search scenes:
+## 6) Run Main Pipeline Per Stack
+Run ASC first, then DSC.
+
+ASC stack:
 ```bash
-mamba run -n isce3-feb python scripts/03_search_s1_stack.py \
-  --repo-root . \
-  --config <your_config.toml>
-```
-
-2. Optional: reference-date suggestion (after search):
-```bash
-mamba run -n isce3-feb python scripts/04_suggest_reference_date.py \
-  --repo-root . \
-  --config <your_config.toml>
-```
-
-3. Download SLCs (dry-run first, then real run with `--download`):
-```bash
+# Download plan (dry-run)
 mamba run -n isce3-feb python scripts/05_download_s1_stack.py \
   --repo-root . \
-  --config <your_config.toml>
+  --config projects/amsterdam/insar/amsterdam_s1_asc_t000/config/processing_configuration.toml
 
+# Download files
 mamba run -n isce3-feb python scripts/05_download_s1_stack.py \
   --repo-root . \
-  --config <your_config.toml> \
+  --config projects/amsterdam/insar/amsterdam_s1_asc_t000/config/processing_configuration.toml \
   --download
-```
 
-4. Download DEM:
-```bash
+# DEM
 mamba run -n isce3-feb python scripts/06_download_dem_opentopography.py \
   --repo-root . \
-  --config <your_config.toml>
-```
+  --config projects/amsterdam/insar/amsterdam_s1_asc_t000/config/processing_configuration.toml
 
-5. Prepare + run COMPASS coreg:
-```bash
+# COMPASS prepare + run
 mamba run -n isce3-feb python scripts/07_prepare_compass_stack.py \
   --repo-root . \
-  --config <your_config.toml>
+  --config projects/amsterdam/insar/amsterdam_s1_asc_t000/config/processing_configuration.toml
 
 mamba run -n isce3-feb python scripts/08_run_compass_runfiles.py \
   --repo-root . \
-  --config <your_config.toml>
-```
+  --config projects/amsterdam/insar/amsterdam_s1_asc_t000/config/processing_configuration.toml
 
-`07_prepare_compass_stack.py` auto-downloads the OPERA burst DB to
-`processing.compass.burst_db_file` when that file is missing.
-
-6. Prepare + run Dolphin:
-```bash
+# Dolphin prepare + run
 mamba run -n isce3-feb python scripts/09_prepare_dolphin_workflow.py \
   --repo-root . \
-  --config <your_config.toml>
+  --config projects/amsterdam/insar/amsterdam_s1_asc_t000/config/processing_configuration.toml
 
 mamba run -n isce3-feb python scripts/11_run_dolphin_workflow.py \
   --repo-root . \
-  --config <your_config.toml>
+  --config projects/amsterdam/insar/amsterdam_s1_asc_t000/config/processing_configuration.toml
 ```
 
-7. Optional dual-track decomposition (after both ASC + DSC Dolphin runs exist):
+DSC stack:
+```bash
+# Download plan (dry-run)
+mamba run -n isce3-feb python scripts/05_download_s1_stack.py \
+  --repo-root . \
+  --config projects/amsterdam/insar/amsterdam_s1_dsc_t000/config/processing_configuration.toml
+
+# Download files
+mamba run -n isce3-feb python scripts/05_download_s1_stack.py \
+  --repo-root . \
+  --config projects/amsterdam/insar/amsterdam_s1_dsc_t000/config/processing_configuration.toml \
+  --download
+
+# DEM
+mamba run -n isce3-feb python scripts/06_download_dem_opentopography.py \
+  --repo-root . \
+  --config projects/amsterdam/insar/amsterdam_s1_dsc_t000/config/processing_configuration.toml
+
+# COMPASS prepare + run
+mamba run -n isce3-feb python scripts/07_prepare_compass_stack.py \
+  --repo-root . \
+  --config projects/amsterdam/insar/amsterdam_s1_dsc_t000/config/processing_configuration.toml
+
+mamba run -n isce3-feb python scripts/08_run_compass_runfiles.py \
+  --repo-root . \
+  --config projects/amsterdam/insar/amsterdam_s1_dsc_t000/config/processing_configuration.toml
+
+# Dolphin prepare + run
+mamba run -n isce3-feb python scripts/09_prepare_dolphin_workflow.py \
+  --repo-root . \
+  --config projects/amsterdam/insar/amsterdam_s1_dsc_t000/config/processing_configuration.toml
+
+mamba run -n isce3-feb python scripts/11_run_dolphin_workflow.py \
+  --repo-root . \
+  --config projects/amsterdam/insar/amsterdam_s1_dsc_t000/config/processing_configuration.toml
+```
+
+Notes:
+- `07_prepare_compass_stack.py` auto-downloads the OPERA burst DB to `processing.compass.burst_db_file` when missing.
+- If `[processing.dolphin.qc].enabled = true`, `09_prepare_dolphin_workflow.py` writes network QC outputs automatically.
+
+## 7) Optional Decomposition (After ASC + DSC Dolphin)
+
 ```bash
 mamba run -n isce3-feb python scripts/90_decompose_los_velocity.py \
   --repo-root . \
-  --config <asc_or_dsc_config.toml>
+  --config projects/amsterdam/insar/amsterdam_s1_asc_t000/config/processing_configuration.toml
 ```
 
-Why: this estimates East/Up velocity by solving the dual-geometry LOS system on a common raster grid.
-Naming note: `90_` indicates an optional end-of-pipeline stage, kept separate from core run-order scripts.
+You can also pass the DSC config; decomposition config blocks are cross-wired to ASC+DSC velocity outputs.
 
-During Dolphin prepare, QC outputs are created automatically when `[processing.dolphin.qc].enabled = true`:
-- `.../stack/dolphin/qc/ifg_network.png`
-- `.../stack/dolphin/qc/ifg_network_summary.json`
-
-Why: this lets you inspect network connectivity before full displacement analysis.
-
-## Notes On What Is Automatic vs Manual
-- Automatic:
-  - KML to AOI bounds/WKT
-  - ASF search outputs
-  - SLC download + resume manifest
-  - DEM retrieval
-  - OPERA burst DB bootstrap during COMPASS prepare (when configured)
-  - Orbit retrieval via COMPASS/S1Reader
-  - COMPASS runfile generation/execution
-  - Dolphin config/run and exports
-- Manual decisions:
-  - Geometry choice (direction/orbit/frame)
-  - Reference date final selection
-  - Dolphin parameter tuning per AOI/noise regime
-
-Why: these decisions depend on local context and quality goals; forcing them to defaults can reduce product quality.
+## 8) Troubleshooting
+- `04_suggest_reference_date.py` says `Missing scenes CSV`:
+  run step 4 first.
+- `03_search_s1_stack.py` returns `Selected scenes: 0`:
+  AOI or geometry selection is wrong; re-check `projects/amsterdam/aux/bbox.kml`, then re-run step 3.
+- `07_prepare_compass_stack.py` reports missing/incomplete local scenes:
+  re-run step 6 download (`05_download_s1_stack.py --download`) for that stack.
+- `08_run_compass_runfiles.py` reports missing run files:
+  step 6 COMPASS prepare did not finish; fix that error and rerun.
