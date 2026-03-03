@@ -148,6 +148,11 @@ mamba run -n isce3-feb python scripts/05_download_s1_stack.py \
   --config <your_config.toml> \
   --download
 ```
+Both dry-run and `--download` write a per-stack footprint map (only the stack in that config, not all candidates):
+- `.../search/products/download_stack_footprint.png`
+Optional flags:
+- `--stack-map-png <path>` to override output path
+- `--no-stack-map` to disable map creation
 
 4. Download DEM:
 ```bash
@@ -202,6 +207,7 @@ Why: this lets you inspect network connectivity before full displacement analysi
   - KML to AOI bounds/WKT
   - ASF search outputs
   - SLC download + resume manifest
+  - Per-stack download footprint map (`search/products/download_stack_footprint.png`)
   - DEM retrieval
   - OPERA burst DB bootstrap during COMPASS prepare (when configured)
   - Orbit retrieval via COMPASS/S1Reader

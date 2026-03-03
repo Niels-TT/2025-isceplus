@@ -24,6 +24,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlparse
 
 import asf_search as asf
@@ -31,6 +32,7 @@ from tqdm import tqdm
 
 from stack_common import (
     DEFAULT_STACK_CONFIG_REL,
+    parse_kml_points,
     read_toml,
     resolve_path,
     resolve_stack_config,
@@ -222,6 +224,198 @@ def short_scene_name(scene_name: str, max_len: int = 44) -> str:
     return f"{scene_name[:left]}...{scene_name[-right:]}"
 
 
+def iter_polygons(geometry: Any):
+    """Yield polygon members from a shapely geometry."""
+    geom_type = geometry.geom_type
+    if geom_type == "Polygon":
+        yield geometry
+        return
+    if geom_type == "MultiPolygon":
+        for poly in geometry.geoms:
+            yield poly
+        return
+    if geom_type == "GeometryCollection":
+        for sub in geometry.geoms:
+            yield from iter_polygons(sub)
+
+
+def write_stack_download_map(
+    *,
+    stack_geojson_path: Path,
+    aoi_points: list[tuple[float, float]],
+    out_png: Path,
+    dpi: int,
+) -> dict[str, Any]:
+    """Write a footprint map for the selected stack scene set.
+
+    Args:
+        stack_geojson_path: GeoJSON path from stack search (`outputs.geojson`).
+        aoi_points: AOI polygon lon/lat points from project KML.
+        out_png: Output PNG path.
+        dpi: Output PNG DPI.
+
+    Returns:
+        Small metadata dictionary describing the generated map.
+
+    Raises:
+        RuntimeError: If geometry/map dependencies are unavailable or inputs invalid.
+    """
+    try:
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        import contextily as ctx
+        from shapely.geometry import shape
+        from shapely.ops import transform, unary_union
+        from pyproj import Transformer
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(
+            "Missing dependency for map generation "
+            "(matplotlib/contextily/shapely/pyproj)."
+        ) from exc
+
+    if not stack_geojson_path.exists():
+        raise RuntimeError(f"Missing stack GeoJSON: {stack_geojson_path}")
+
+    payload = json.loads(stack_geojson_path.read_text(encoding="utf-8"))
+    features = payload.get("features", []) if isinstance(payload, dict) else []
+    if not features:
+        raise RuntimeError(f"No features found in stack GeoJSON: {stack_geojson_path}")
+
+    to_mercator = Transformer.from_crs("EPSG:4326", "EPSG:3857", always_xy=True)
+
+    geoms_mercator: list[Any] = []
+    unique_dates: set[str] = set()
+    for feature in features:
+        props = feature.get("properties", {}) or {}
+        start_time = str(props.get("startTime", "")).strip()
+        if len(start_time) >= 10:
+            unique_dates.add(start_time[:10])
+
+        geometry_data = feature.get("geometry")
+        if not geometry_data:
+            continue
+        geom = shape(geometry_data)
+        if geom.is_empty:
+            continue
+        if not geom.is_valid:
+            geom = geom.buffer(0)
+            if geom.is_empty:
+                continue
+        geoms_mercator.append(transform(to_mercator.transform, geom))
+
+    if not geoms_mercator:
+        raise RuntimeError(f"No valid geometries found in {stack_geojson_path}")
+
+    stack_union = unary_union(geoms_mercator)
+
+    aoi_mercator = [to_mercator.transform(x, y) for x, y in aoi_points]
+    aoi_x = [p[0] for p in aoi_mercator]
+    aoi_y = [p[1] for p in aoi_mercator]
+
+    minx, miny, maxx, maxy = stack_union.bounds
+    minx = min(minx, min(aoi_x))
+    miny = min(miny, min(aoi_y))
+    maxx = max(maxx, max(aoi_x))
+    maxy = max(maxy, max(aoi_y))
+    dx = maxx - minx
+    dy = maxy - miny
+    pad_x = max(dx * 0.08, 1.0)
+    pad_y = max(dy * 0.08, 1.0)
+
+    fig, ax = plt.subplots(figsize=(11.69, 8.27), dpi=110)
+    ax.set_facecolor("#f7f8fa")
+
+    ax.set_xlim(minx - pad_x, maxx + pad_x)
+    ax.set_ylim(miny - pad_y, maxy + pad_y)
+    ax.set_aspect("equal", adjustable="box")
+
+    try:
+        image, extent = ctx.bounds2img(
+            minx - pad_x,
+            miny - pad_y,
+            maxx + pad_x,
+            maxy + pad_y,
+            source=ctx.providers.CartoDB.Positron,
+            ll=False,
+            use_cache=False,
+            n_connections=1,
+        )
+        ax.imshow(
+            image,
+            extent=extent,
+            interpolation="bilinear",
+            aspect=ax.get_aspect(),
+            zorder=0,
+        )
+        ax.set_xlim(minx - pad_x, maxx + pad_x)
+        ax.set_ylim(miny - pad_y, maxy + pad_y)
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(
+            f"Could not add Positron basemap via contextily: {exc}"
+        ) from exc
+
+    # Draw each scene footprint lightly, then the combined stack envelope on top.
+    for geom in geoms_mercator:
+        for poly in iter_polygons(geom):
+            x, y = poly.exterior.xy
+            ax.fill(x, y, color="#fb8500", alpha=0.05, zorder=2)
+            ax.plot(x, y, color="#ffb703", linewidth=0.9, alpha=0.35, zorder=3)
+
+    for poly in iter_polygons(stack_union):
+        x, y = poly.exterior.xy
+        ax.fill(x, y, color="#fb8500", alpha=0.17, zorder=4)
+        ax.plot(x, y, color="white", linewidth=3.2, alpha=0.95, zorder=5)
+        ax.plot(x, y, color="#d00000", linewidth=1.7, alpha=0.95, zorder=6)
+
+    ax.fill(aoi_x, aoi_y, color="#0077b6", alpha=0.14, zorder=7)
+    ax.plot(aoi_x, aoi_y, color="white", linewidth=4.0, zorder=8)
+    ax.plot(aoi_x, aoi_y, color="#0077b6", linewidth=2.2, zorder=9)
+
+    ax.grid(color="#d9dee6", linestyle="--", linewidth=0.6, alpha=0.6)
+    ax.set_xlabel("Web Mercator X (m)")
+    ax.set_ylabel("Web Mercator Y (m)")
+    ax.set_title(
+        "Downloaded Stack Footprint vs Project AOI",
+        fontsize=13,
+        fontweight="bold",
+        pad=10,
+    )
+
+    date_span = ""
+    if unique_dates:
+        ordered_dates = sorted(unique_dates)
+        date_span = f"{ordered_dates[0]} -> {ordered_dates[-1]}"
+    subtitle = (
+        f"Scenes: {len(features)} | Unique dates: {len(unique_dates)}"
+        + (f" | Date span: {date_span}" if date_span else "")
+    )
+    ax.text(
+        0.01,
+        0.99,
+        subtitle,
+        transform=ax.transAxes,
+        ha="left",
+        va="top",
+        fontsize=9.3,
+        bbox={"facecolor": "white", "edgecolor": "#d1d5db", "alpha": 0.92, "pad": 4.0},
+    )
+
+    out_png.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_png, dpi=max(100, dpi), bbox_inches="tight", pad_inches=0.08)
+    plt.close(fig)
+
+    return {
+        "map_png": str(out_png),
+        "scene_count": len(features),
+        "unique_dates": len(unique_dates),
+        "date_span": date_span,
+        "basemap": "CartoDB.Positron (contextily,no-cache)",
+        "basemap_added": True,
+    }
+
+
 def download_url_with_progress(
     item: DownloadItem,
     session: asf.ASFSession,
@@ -371,6 +565,25 @@ def main() -> int:
         default=5.0,
         help="Base backoff delay (seconds); retries use exponential backoff.",
     )
+    parser.add_argument(
+        "--stack-map-png",
+        default="",
+        help=(
+            "Output PNG for selected stack footprint map. "
+            "Default: <outputs.root>/products/download_stack_footprint.png"
+        ),
+    )
+    parser.add_argument(
+        "--no-stack-map",
+        action="store_true",
+        help="Disable stack footprint map PNG creation in dry-run and --download modes.",
+    )
+    parser.add_argument(
+        "--map-dpi",
+        type=int,
+        default=260,
+        help="Stack footprint map resolution in DPI.",
+    )
     args = parser.parse_args()
 
     repo_root = Path(args.repo_root).resolve()
@@ -385,6 +598,7 @@ def main() -> int:
 
     out_root = resolve_path(repo_root, out_cfg["root"])
     scene_csv = out_root / out_cfg["metadata_csv"]
+    geojson_path = out_root / out_cfg["geojson"]
     slc_dir = resolve_path(repo_root, storage_cfg["slc_dir"])
     manifest_path = resolve_path(repo_root, storage_cfg["download_manifest"])
     slc_dir.mkdir(parents=True, exist_ok=True)
@@ -411,6 +625,7 @@ def main() -> int:
 
     print(f"Config: {config_path}")
     print(f"Scene CSV: {scene_csv}")
+    print(f"Stack GeoJSON: {geojson_path}")
     print(f"SLC dir: {slc_dir}")
     print(f"Manifest: {manifest_path}")
     print(f"Total listed scenes: {len(items)}")
@@ -424,6 +639,32 @@ def main() -> int:
         f"(pending * (1+{args.overhead_fraction:.2f}) + reserve {args.reserve_gb:.1f} GB): "
         f"{guarded_required / 1e9:.2f} GB"
     )
+
+    stack_map_path: Path | None = None
+    if not args.no_stack_map:
+        if args.stack_map_png:
+            stack_map_path = resolve_path(repo_root, args.stack_map_png)
+        else:
+            stack_map_path = out_root / "products" / "download_stack_footprint.png"
+        print(f"Stack map PNG: {stack_map_path}")
+
+    if stack_map_path is not None:
+        try:
+            aoi_kml = resolve_path(repo_root, cfg["aoi"]["kml"])
+            aoi_points = parse_kml_points(aoi_kml)
+            map_meta = write_stack_download_map(
+                stack_geojson_path=geojson_path,
+                aoi_points=aoi_points,
+                out_png=stack_map_path,
+                dpi=max(100, args.map_dpi),
+            )
+            print(
+                "Wrote stack map PNG: "
+                f"{stack_map_path} "
+                f"(scenes={map_meta['scene_count']}, unique_dates={map_meta['unique_dates']})"
+            )
+        except Exception as exc:  # noqa: BLE001
+            print(f"[WARN] Could not generate stack map PNG: {exc}", file=sys.stderr)
 
     if not args.download:
         print("\nDry-run only. Re-run with --download to execute.")

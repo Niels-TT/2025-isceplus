@@ -4,7 +4,9 @@ Why: this directory keeps all generated artifacts for one stack, separate from s
 
 ## Layout
 - `config/processing_configuration.toml`: project stack configuration (single source of truth)
-- `search/`: ASF query outputs (`scenes.csv`, manifests)
+- `search/`: ASF query outputs (`scenes.csv`, manifests, candidate and selected-stack maps)
+  - Discovery candidates map: `search/candidates/stack_candidates.png`
+  - Download stack map: `search/products/download_stack_footprint.png`
 - `stack/slc/`: downloaded raw SLC ZIPs
 - `stack/dem/`: DEM and DEM metadata
 - `stack/orbits/`: orbit cache

@@ -29,8 +29,11 @@ import matplotlib
 matplotlib.use("Agg")
 
 import matplotlib.dates as mdates
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import networkx as nx
+import numpy as np
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 from stack_common import (
     DEFAULT_STACK_CONFIG_REL,
@@ -148,71 +151,202 @@ def graph_metrics(n_nodes: int, edges: list[Edge]) -> dict[str, Any]:
     }
 
 
+def infer_reference_suggestions_json(
+    *,
+    repo_root: Path,
+    cfg: dict[str, Any],
+    stack_root: Path,
+) -> Path | None:
+    """Resolve reference-date suggestions JSON path, if present."""
+    outputs_cfg = cfg.get("outputs", {})
+    candidates: list[Path] = []
+
+    root_raw = str(outputs_cfg.get("root", "")).strip()
+    metadata_raw = str(outputs_cfg.get("metadata_csv", "")).strip()
+    if root_raw:
+        root_path = resolve_path(repo_root, root_raw)
+        if metadata_raw:
+            candidates.append((root_path / metadata_raw).parent / "reference_date_suggestions.json")
+        candidates.append(root_path / "products" / "reference_date_suggestions.json")
+
+    candidates.append(stack_root / "search" / "products" / "reference_date_suggestions.json")
+
+    for path in candidates:
+        if path.exists():
+            return path
+    return None
+
+
+def load_date_baselines_from_reference_suggestions(path: Path) -> dict[date, float]:
+    """Load relative per-date baselines from reference-date suggestions output.
+
+    Notes:
+        `mean_perpendicular_baseline_m` in ranking is `mean(rel) - rel(date)`.
+        Negating it recovers relative baseline up to an additive constant, which
+        is sufficient for plotting after centering.
+    """
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+    ranking = payload.get("ranking")
+    if not isinstance(ranking, list):
+        return {}
+
+    out: dict[date, float] = {}
+    for row in ranking:
+        if not isinstance(row, dict):
+            continue
+        token = str(row.get("date", "")).strip()
+        mean_perp = row.get("mean_perpendicular_baseline_m")
+        if not token or mean_perp is None:
+            continue
+        try:
+            d = datetime.strptime(token, "%Y-%m-%d").date()
+            out[d] = -float(mean_perp)
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def build_perp_baseline_series(
+    *,
+    dates: list[date],
+    baseline_by_date: dict[date, float],
+) -> tuple[list[float], str, int]:
+    """Build per-date baseline series, with interpolation and zero-mean centering."""
+    raw: list[float | None] = [baseline_by_date.get(d) for d in dates]
+    known_idx = [i for i, value in enumerate(raw) if value is not None]
+    if not known_idx:
+        return [0.0] * len(dates), "flat_zero", 0
+
+    values = [float(v) if v is not None else None for v in raw]
+    for i, value in enumerate(values):
+        if value is not None:
+            continue
+        left_idx = max((k for k in known_idx if k < i), default=None)
+        right_idx = min((k for k in known_idx if k > i), default=None)
+        if left_idx is not None and right_idx is not None:
+            left_val = float(values[left_idx])  # type: ignore[arg-type]
+            right_val = float(values[right_idx])  # type: ignore[arg-type]
+            frac = (i - left_idx) / (right_idx - left_idx)
+            values[i] = left_val + frac * (right_val - left_val)
+        elif left_idx is not None:
+            values[i] = float(values[left_idx])  # type: ignore[arg-type]
+        elif right_idx is not None:
+            values[i] = float(values[right_idx])  # type: ignore[arg-type]
+        else:
+            values[i] = 0.0
+
+    series = [float(v) for v in values]
+    mean_value = float(sum(series) / len(series)) if series else 0.0
+    centered = [v - mean_value for v in series]
+    source = "reference_date_suggestions_json"
+    if len(known_idx) < len(dates):
+        source += "+interpolated"
+    return centered, source, len(known_idx)
+
+
+def read_edge_coherence(
+    *,
+    interferograms_dir: Path,
+    dates: list[date],
+    edges: list[Edge],
+) -> dict[tuple[int, int], float]:
+    """Read average spatial coherence for each edge from Dolphin .int.cor.tif files."""
+    try:
+        import rasterio
+    except ModuleNotFoundError:
+        return {}
+
+    if not interferograms_dir.exists():
+        return {}
+
+    out: dict[tuple[int, int], float] = {}
+    for edge in edges:
+        name = f"{dates[edge.i].strftime('%Y%m%d')}_{dates[edge.j].strftime('%Y%m%d')}.int.cor.tif"
+        path = interferograms_dir / name
+        if not path.exists():
+            continue
+        try:
+            with rasterio.open(path) as ds:
+                arr = ds.read(1, masked=True)
+        except Exception:
+            continue
+
+        values = np.ma.masked_invalid(arr).compressed()
+        if values.size == 0:
+            continue
+        mean_value = float(np.mean(values))
+        if math.isfinite(mean_value):
+            out[(edge.i, edge.j)] = float(min(1.0, max(0.0, mean_value)))
+    return out
+
+
 def plot_network_png(
     *,
     dates: list[date],
+    baselines_m: list[float],
     edges: list[Edge],
+    edge_coherence: dict[tuple[int, int], float],
     out_png: Path,
     dpi: int,
     title: str,
     subtitle: str,
 ) -> None:
-    """Render interferogram network as arc graph on time axis."""
+    """Render interferogram network in time-perpendicular-baseline coordinates."""
     out_png.parent.mkdir(parents=True, exist_ok=True)
 
     datetimes = [datetime.combine(d, datetime.min.time()) for d in dates]
-    x = mdates.date2num(datetimes)
+    fig, ax = plt.subplots(figsize=(10.8, 5.8), dpi=110)
 
-    fig, ax = plt.subplots(figsize=(13.0, 5.6), dpi=110)
-    ax.set_facecolor("#fcfcfd")
+    coh_available = bool(edge_coherence)
+    cmap = plt.get_cmap("RdBu")
+    norm = mpl.colors.Normalize(vmin=0.2, vmax=1.0)
 
-    # Draw edges as simple arcs above timeline.
-    for edge in edges:
-        x0 = x[edge.i]
-        x1 = x[edge.j]
-        xm = (x0 + x1) * 0.5
-        gap = max(1, edge.j - edge.i)
-        amp = 0.15 + 0.17 * math.sqrt(gap)
-        ax.plot(
-            [x0, xm, x1],
-            [0.0, amp, 0.0],
-            color="#4379b3",
-            linewidth=1.0,
-            alpha=0.35,
-            zorder=2,
-        )
+    edge_order = (
+        sorted(edges, key=lambda e: edge_coherence.get((e.i, e.j), -1.0))
+        if coh_available
+        else edges
+    )
+    for edge in edge_order:
+        x = [datetimes[edge.i], datetimes[edge.j]]
+        y = [baselines_m[edge.i], baselines_m[edge.j]]
+        coh = edge_coherence.get((edge.i, edge.j))
+        if coh is not None:
+            color = cmap(norm(coh))
+            width = 2.0
+        else:
+            color = "#9ebfd9"
+            width = 1.3
+        ax.plot(x, y, "-", lw=width, alpha=0.72, c=color, zorder=1)
 
-    ax.scatter(x, [0.0] * len(x), s=34, color="#1a1a1a", zorder=5)
+    ax.plot(
+        datetimes,
+        baselines_m,
+        "o",
+        ms=10,
+        alpha=0.9,
+        mfc="#f2b134",
+        mec="#4a4a4a",
+        mew=1.1,
+        linestyle="None",
+        zorder=3,
+    )
 
-    # Date labels are sampled to keep readability on dense stacks.
-    max_labels = 14
-    step = max(1, math.ceil(len(x) / max_labels))
-    shown_idx = set(range(0, len(x), step))
-    shown_idx.add(len(x) - 1)
+    date_locator = mdates.AutoDateLocator(minticks=5, maxticks=9)
+    ax.xaxis.set_major_locator(date_locator)
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%m/%Y"))
+    ax.tick_params(axis="x", labelrotation=35)
+    for label in ax.get_xticklabels():
+        label.set_ha("right")
 
-    for i, d in enumerate(dates):
-        if i not in shown_idx:
-            continue
-        ax.text(
-            x[i],
-            -0.06,
-            d.strftime("%Y-%m-%d"),
-            rotation=45,
-            ha="right",
-            va="top",
-            fontsize=8.2,
-            color="#333333",
-        )
-
-    ax.set_ylim(-0.15, None)
-    ax.set_yticks([])
     ax.set_xlabel("Acquisition date")
-    ax.xaxis_date()
-    ax.xaxis.set_major_locator(mdates.AutoDateLocator(minticks=4, maxticks=8))
-    ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m"))
-    ax.grid(axis="x", linestyle="--", color="#d8dde5", alpha=0.7)
+    ax.set_ylabel("Perp Baseline [m]")
+    ax.tick_params(which="both", direction="in", bottom=True, top=True, left=True, right=True)
 
-    ax.set_title(title, fontsize=13, fontweight="bold", pad=10)
+    ax.set_title(title, fontsize=13, pad=6)
     ax.text(
         0.01,
         0.96,
@@ -223,6 +357,13 @@ def plot_network_png(
         fontsize=9.4,
         color="#444444",
     )
+
+    if coh_available:
+        cax = make_axes_locatable(ax).append_axes("right", "3%", pad="3%")
+        sm = mpl.cm.ScalarMappable(norm=norm, cmap=cmap)
+        sm.set_array([])
+        cbar = fig.colorbar(sm, cax=cax)
+        cbar.set_label("Average Spatial Coherence")
 
     fig.savefig(out_png, dpi=max(100, dpi), bbox_inches="tight", pad_inches=0.1)
     plt.close(fig)
@@ -367,6 +508,28 @@ def main() -> int:
     )
     metrics = graph_metrics(len(dates), edges)
 
+    reference_suggestions_json = infer_reference_suggestions_json(
+        repo_root=repo_root,
+        cfg=cfg,
+        stack_root=stack_root,
+    )
+    baseline_by_date: dict[date, float] = {}
+    if reference_suggestions_json is not None:
+        baseline_by_date = load_date_baselines_from_reference_suggestions(
+            reference_suggestions_json
+        )
+    baselines_m, baseline_source, baseline_available_count = build_perp_baseline_series(
+        dates=dates,
+        baseline_by_date=baseline_by_date,
+    )
+
+    interferograms_dir = work_dir / "interferograms"
+    edge_coherence = read_edge_coherence(
+        interferograms_dir=interferograms_dir,
+        dates=dates,
+        edges=edges,
+    )
+
     print(f"Config: {config_path}")
     print(f"CSLC list: {cslc_file_list}")
     print(f"Unique acquisition dates: {len(dates)}")
@@ -379,25 +542,42 @@ def main() -> int:
     print(f"Output JSON: {output_json}")
     print(f"Edge count: {metrics['edge_count']}")
     print(f"Connected components: {metrics['connected_components']}")
+    print(f"Baseline source: {baseline_source}")
+    print(f"Baseline values available: {baseline_available_count}/{len(dates)}")
+    print(f"Interferogram coherence edges available: {len(edge_coherence)}/{len(edges)}")
 
     if args.dry_run:
         return 0
 
-    title = f"Dolphin Interferogram Network ({project_name})"
-    subtitle = (
-        f"{len(dates)} dates | {metrics['edge_count']} edges | "
-        f"max_bandwidth={max_bandwidth}"
-    )
+    title = "Interferogram Network"
+    subtitle_parts = [
+        f"{project_name}",
+        f"{len(dates)} dates",
+        f"{metrics['edge_count']} edges",
+        f"max_bandwidth={max_bandwidth}",
+    ]
     if max_temporal_baseline is not None:
-        subtitle += f" | max_temporal_baseline_days={max_temporal_baseline}"
+        subtitle_parts.append(f"max_temporal_baseline_days={max_temporal_baseline}")
+    if edge_coherence:
+        subtitle_parts.append(f"coherence_edges={len(edge_coherence)}")
+    subtitle = " | ".join(subtitle_parts)
 
     plot_network_png(
         dates=dates,
+        baselines_m=baselines_m,
         edges=edges,
+        edge_coherence=edge_coherence,
         out_png=output_png,
         dpi=max(100, args.dpi),
         title=title,
         subtitle=subtitle,
+    )
+
+    edge_coherence_values = list(edge_coherence.values())
+    edge_coherence_mean = (
+        float(sum(edge_coherence_values) / len(edge_coherence_values))
+        if edge_coherence_values
+        else None
     )
 
     payload = {
@@ -410,6 +590,20 @@ def main() -> int:
         "max_temporal_baseline_days": max_temporal_baseline,
         "first_date": dates[0].isoformat(),
         "last_date": dates[-1].isoformat(),
+        "baseline_source": baseline_source,
+        "baseline_reference_suggestions_json": (
+            str(reference_suggestions_json) if reference_suggestions_json is not None else None
+        ),
+        "baseline_available_count": baseline_available_count,
+        "date_baselines_m": [
+            {"date": d.isoformat(), "perp_baseline_m": round(baselines_m[i], 3)}
+            for i, d in enumerate(dates)
+        ],
+        "interferograms_dir": str(interferograms_dir),
+        "edge_coherence_count": len(edge_coherence),
+        "edge_coherence_mean": round(edge_coherence_mean, 4)
+        if edge_coherence_mean is not None
+        else None,
         "metrics": metrics,
         "edges": [
             {
@@ -418,6 +612,9 @@ def main() -> int:
                 "ref_date": dates[e.i].isoformat(),
                 "sec_date": dates[e.j].isoformat(),
                 "days": e.days,
+                "avg_spatial_coherence": round(edge_coherence[(e.i, e.j)], 4)
+                if (e.i, e.j) in edge_coherence
+                else None,
             }
             for e in edges
         ],

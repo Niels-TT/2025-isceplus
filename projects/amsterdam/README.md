@@ -167,6 +167,9 @@ mamba run -n isce3-feb python scripts/11_run_dolphin_workflow.py \
 Notes:
 - `07_prepare_compass_stack.py` auto-downloads the OPERA burst DB to `processing.compass.burst_db_file` when missing.
 - If `[processing.dolphin.qc].enabled = true`, `09_prepare_dolphin_workflow.py` writes network QC outputs automatically.
+- `05_download_s1_stack.py` (dry-run and `--download`) writes a stack footprint map per stack at:
+  - `projects/amsterdam/insar/amsterdam_s1_asc_t000/search/products/download_stack_footprint.png`
+  - `projects/amsterdam/insar/amsterdam_s1_dsc_t000/search/products/download_stack_footprint.png`
 
 ## 7) Optional Decomposition (After ASC + DSC Dolphin)
 

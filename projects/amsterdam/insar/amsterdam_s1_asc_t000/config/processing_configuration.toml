@@ -34,7 +34,7 @@ expected_unique_dates = 0
 [selection]
 mode = "first_n_from_reference"
 max_dates = 30
-require_reference = false # Set true after choosing a confirmed reference_date from search results.
+require_reference = true # Set true after choosing a confirmed reference_date from search results.
 
 [outputs]
 root = "projects/amsterdam/insar/amsterdam_s1_asc_t000/search"

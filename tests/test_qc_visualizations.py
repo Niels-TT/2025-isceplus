@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 import unittest
 from datetime import date
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 
 def _load_module(path: Path):
@@ -77,6 +79,39 @@ class QCVisualizationTests(unittest.TestCase):
         metrics = self.ifg_qc.graph_metrics(n_nodes=4, edges=edges)
         self.assertEqual(metrics["connected_components"], 1)
         self.assertTrue(metrics["is_connected"])
+
+    def test_load_date_baselines_from_reference_suggestions(self) -> None:
+        payload = {
+            "ranking": [
+                {"date": "2025-01-01", "mean_perpendicular_baseline_m": 10.0},
+                {"date": "2025-01-13", "mean_perpendicular_baseline_m": -5.0},
+                {"date": "2025-01-25", "mean_perpendicular_baseline_m": None},
+            ]
+        }
+        with TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "reference_date_suggestions.json"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            out = self.ifg_qc.load_date_baselines_from_reference_suggestions(path)
+
+        self.assertAlmostEqual(out[date(2025, 1, 1)], -10.0)
+        self.assertAlmostEqual(out[date(2025, 1, 13)], 5.0)
+        self.assertNotIn(date(2025, 1, 25), out)
+
+    def test_build_perp_baseline_series_interpolates_and_centers(self) -> None:
+        dates = [date(2025, 1, 1), date(2025, 1, 13), date(2025, 1, 25)]
+        series, source, known = self.ifg_qc.build_perp_baseline_series(
+            dates=dates,
+            baseline_by_date={
+                date(2025, 1, 1): 0.0,
+                date(2025, 1, 25): 20.0,
+            },
+        )
+        self.assertEqual(known, 2)
+        self.assertIn("interpolated", source)
+        self.assertEqual(len(series), 3)
+        self.assertAlmostEqual(series[0], -10.0, places=4)
+        self.assertAlmostEqual(series[1], 0.0, places=4)
+        self.assertAlmostEqual(series[2], 10.0, places=4)
 
 
 if __name__ == "__main__":
